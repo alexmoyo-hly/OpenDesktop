@@ -1,9 +1,11 @@
 import {
   generateText,
+  pruneMessages,
   smoothStream,
   stepCountIs,
   streamText,
   type ModelMessage,
+  type StopCondition,
   type ToolSet,
   type UserContent,
 } from "ai";
@@ -26,7 +28,7 @@ import {
   needsSlimHarness,
   pickModel,
 } from "@shared/routing";
-import { canReason, effortLevel, reasoningOptions } from "@shared/effort";
+import { canReason, effortLevel, reasoningLevel } from "@shared/effort";
 import { mentionToken, mentionedAgents } from "@shared/mentions";
 import { costOf, formatCost } from "@shared/cost";
 import { isAbort } from "@shared/errors";
@@ -108,6 +110,43 @@ export function deliverQueuedFollowUps(): void {
   }
 }
 
+interface StepCalls {
+  toolCalls: { toolName: string; input: unknown }[];
+  toolResults?: { output?: unknown }[];
+}
+
+/**
+ * How many of the last steps made the same tool calls, with the same results, as the last one.
+ * A different result means progress (a build printing more), so it does not count.
+ */
+export function repeatedCalls(steps: StepCalls[]): {
+  count: number;
+  call: string;
+} {
+  const calls = (step: StepCalls): string =>
+    step.toolCalls
+      .map((call) => `${call.toolName}(${JSON.stringify(call.input)})`)
+      .sort()
+      .join(" + ");
+  const signature = (step: StepCalls): string =>
+    `${calls(step)} => ${JSON.stringify((step.toolResults ?? []).map((result) => result.output))}`;
+  const last = steps.at(-1);
+  if (!last || last.toolCalls.length === 0) return { count: 0, call: "" };
+  const same = signature(last);
+  let count = 0;
+  for (
+    let index = steps.length - 1;
+    index >= 0 && signature(steps[index]) === same;
+    index--
+  )
+    count++;
+  return { count, call: calls(last) };
+}
+
+// ponytail: identical-call detector only; a loop alternating two calls still runs to the step ceiling.
+const LOOP_WARN_AT = 3;
+const LOOP_STOP_AT = 5;
+
 export function stop(sessionId: string): void {
   cancelSessionApprovals(sessionId);
   controllers.get(sessionId)?.abort();
@@ -121,13 +160,12 @@ export function stop(sessionId: string): void {
  * distinction matters, because delegating a one-line change costs a round trip
  * and loses the conversation's context.
  */
-function orchestrator(config: AppConfig): AgentConfig {
+// Only the @name → id mapping: the descriptions are in the `task` tool, which is resent every step too.
+function orchestrator(config: AppConfig, sandbox: boolean): AgentConfig {
   const roster = Object.values(config.agent)
     .filter((a) => a.mode === "subagent" || a.mode === "all")
-    .map(
-      (a) =>
-        `- ${mentionToken(a)} (id \`${a.id}\`): ${a.description || a.name}`,
-    )
+    .filter((a) => sandbox || !a.sandboxOnly)
+    .map((a) => `- ${mentionToken(a)} → \`${a.id}\``)
     .join("\n");
 
   return {
@@ -139,7 +177,7 @@ function orchestrator(config: AppConfig): AgentConfig {
     color: "#d97757",
     prompt: `You are the lead engineer on this session. You decide how the work gets done.
 
-# Specialists you can delegate to
+# Specialists you can delegate to (what each does is in the \`task\` tool)
 ${roster || "(none configured)"}
 
 # When the user names one with @
@@ -649,6 +687,7 @@ async function tighten(
   sessionId: string,
   modelRef: string,
   measuredTokens: number,
+  signal?: AbortSignal,
 ): Promise<{ prefix: "kept" | "dehydrated" | "compacted" }> {
   /*
    * Leaving the transcript alone is usually the cheaper move.
@@ -686,6 +725,8 @@ async function tighten(
     sessionId,
     modelRef,
     projected,
+    false,
+    signal,
   );
 
   /*
@@ -713,6 +754,7 @@ async function compactIfNeeded(
   modelRef: string,
   measuredTokens: number,
   force = false,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   // A summary is not the work, so it does not go to the model doing the work.
   // Whatever was named for it, or whatever the router says is cheapest and
@@ -757,6 +799,11 @@ async function compactIfNeeded(
               return `[${message.role}] ${content.slice(0, 4000)}`;
             })
             .join("\n\n")}\n</new-messages>`,
+        // It runs before the turn releases the session: a stuck call, or a Stop, must not hold it for minutes.
+        maxRetries: 1,
+        abortSignal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(90_000)])
+          : AbortSignal.timeout(90_000),
       });
       // Summarising was free in the accounting until now, which it never was
       // in fact. Charged to the session, priced as whichever model did it.
@@ -807,7 +854,8 @@ async function compactIfNeeded(
  */
 export async function compactNow(sessionId: string): Promise<boolean> {
   const session = store.getSession(sessionId);
-  if (!session) return false;
+  // A running turn appends to the history while the summary is written; the summary would then overwrite it.
+  if (!session || isRunning(sessionId)) return false;
   const config = resolvedConfig();
   const agent = config.agent[session.agentId];
   const modelRef = agent?.model ?? session.model;
@@ -1008,16 +1056,16 @@ export async function runTurn(input: TurnInput): Promise<string> {
     throw new Error("This session is already running.");
 
   const config = resolvedConfig();
+  const envKind = config.environment[session.environmentId]?.kind;
   const agent =
     isManager(session.agentId) || !config.agent[session.agentId]
-      ? orchestrator(config)
+      ? orchestrator(config, envKind === "container")
       : config.agent[session.agentId];
 
   // A pentesting agent runs only in a sandbox. Refused here, plainly, before
   // anything starts: its tools do not exist outside the image, and a security
   // agent loose on the local machine or an SSH host is the opposite of the
   // point. The transcript keeps the ask; the answer is why it will not run.
-  const envKind = config.environment[session.environmentId]?.kind;
   if (agent.sandboxOnly && envKind !== "container") {
     store.addMessage({
       sessionId: session.id,
@@ -1293,13 +1341,13 @@ export async function runTurn(input: TurnInput): Promise<string> {
       );
 
     const effort = effortLevel(session.effort);
-    const thinks = canReason(declared);
-    const reasoning = thinks
-      ? reasoningOptions(
-          config.provider[modelRef.slice(0, modelRef.indexOf("/"))]?.npm ?? "",
-          modelRef.slice(0, modelRef.indexOf("/")),
-          effort,
-        )
+    const npm =
+      config.provider[modelRef.slice(0, modelRef.indexOf("/"))]?.npm ?? "";
+    const anthropic = npm === "@ai-sdk/anthropic";
+    // This SDK resends old reasoning as `reasoning_content` on every step; the others need theirs back.
+    const dropReasoning = npm === "@ai-sdk/openai-compatible";
+    const reasoning = canReason(declared)
+      ? reasoningLevel(npm, effort)
       : undefined;
     const stepCeiling = Math.max(
       1,
@@ -1408,6 +1456,12 @@ export async function runTurn(input: TurnInput): Promise<string> {
           parentSessionId: session.id,
         });
         store.updateSession(child.id, { taskLabel: description });
+        // Stop on the parent has to reach the child, or it keeps calling the model and the parent never returns.
+        if (controller.signal.aborted) {
+          return { sessionId: child.id, report: "(stopped before it started)" };
+        }
+        const cascade = (): void => stop(child.id);
+        controller.signal.addEventListener("abort", cascade, { once: true });
         const report = await runTurn({
           sessionId: child.id,
           userText: prompt,
@@ -1420,7 +1474,9 @@ export async function runTurn(input: TurnInput): Promise<string> {
           collectFinalText: true,
           depth: (input.depth ?? 0) + 1,
           parentBlockId,
-        });
+        }).finally(() =>
+          controller.signal.removeEventListener("abort", cascade),
+        );
         /*
          * What the subagent spent is what this task cost, so it is credited
          * here as well as kept on the subchat. A card that delegated three
@@ -1544,6 +1600,14 @@ export async function runTurn(input: TurnInput): Promise<string> {
     let silentCalls = 0;
     let progressNudges = 0;
 
+    let loopStopped = "";
+    const loopStop: StopCondition<ToolSet> = ({ steps: done }) => {
+      const { count, call } = repeatedCalls(done);
+      if (count < LOOP_STOP_AT) return false;
+      loopStopped = call.slice(0, 200);
+      return true;
+    };
+
     const partOfPrefix = {
       messages: history.estimateTokens(messages),
       system: Math.round(systemText.length / 4),
@@ -1571,10 +1635,19 @@ export async function runTurn(input: TurnInput): Promise<string> {
        * ...except where thinking is on: Anthropic refuses a request that sets
        * both, and it is the thinking that was asked for.
        */
-      temperature: reasoning?.anthropic
-        ? undefined
-        : (agent.temperature ?? (slim ? 0.2 : undefined)),
-      ...(reasoning ? { providerOptions: reasoning } : {}),
+      temperature:
+        anthropic && reasoning
+          ? undefined
+          : (agent.temperature ?? (slim ? 0.2 : undefined)),
+      ...(reasoning ? { reasoning } : {}),
+      // Top-level cache_control: Anthropic caches up to the last block and moves the breakpoint each step.
+      ...(anthropic
+        ? {
+            providerOptions: {
+              anthropic: { cacheControl: { type: "ephemeral" as const } },
+            },
+          }
+        : {}),
       /*
        * A dozen steps for a small model, sixty for the others.
        *
@@ -1585,7 +1658,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
        * forty-seven seconds of that into a bounded failure that says what
        * happened, which is the most useful thing it can be.
        */
-      stopWhen: stepCountIs(stepCeiling),
+      stopWhen: [stepCountIs(stepCeiling), loopStop],
       /*
        * Told before it is cut off.
        *
@@ -1595,10 +1668,21 @@ export async function runTurn(input: TurnInput): Promise<string> {
        * what is left, at the end of the messages so the prefix — and the
        * cache — is untouched. The ceiling stays as the backstop it should be.
        */
-      prepareStep: ({ messages: soFar, stepNumber }) => {
+      prepareStep: ({ messages: soFar, stepNumber, steps: done }) => {
+        const base = dropReasoning
+          ? pruneMessages({ messages: soFar, reasoning: "all" })
+          : soFar;
         // The first step is the one the conversation already opened with.
-        if (stepNumber === 0) return {};
+        if (stepNumber === 0) return dropReasoning ? { messages: base } : {};
         const notes: string[] = [];
+        const { count: repeats, call: repeated } = repeatedCalls(done);
+        if (repeats >= LOOP_WARN_AT) {
+          notes.push(
+            `<loop>You have made the same call ${repeats} times in a row with the same result: ` +
+              `${repeated.slice(0, 200)}. It will not change. Use what you already have: answer, ` +
+              `or try something different. The turn stops at ${LOOP_STOP_AT}.</loop>`,
+          );
+        }
         const ceiling = config.maxTurnTokens ?? 0;
         if (ceiling > 0) {
           const used = spent();
@@ -1627,10 +1711,10 @@ export async function runTurn(input: TurnInput): Promise<string> {
               `blocks arrive with no account of what they add up to.</progress>`,
           );
         }
-        if (notes.length === 0) return {};
+        if (notes.length === 0) return dropReasoning ? { messages: base } : {};
         return {
           messages: [
-            ...soFar,
+            ...base,
             ...notes.map((content) => ({ role: "user" as const, content })),
           ],
         };
@@ -1648,6 +1732,8 @@ export async function runTurn(input: TurnInput): Promise<string> {
           }
         : {}),
       abortSignal: controller.signal,
+      // 429s honour Retry-After; Helmcode's 503 bursts clear within the 2/4/8 s backoff.
+      maxRetries: 3,
       onToolExecutionStart: () => toolStarted(),
       onToolExecutionEnd: () => toolEnded(),
       onError: ({ error }) => {
@@ -1927,14 +2013,36 @@ export async function runTurn(input: TurnInput): Promise<string> {
      * the catch because this is the path an abort actually takes.
      */
     if (budgetStop) sayBudgetStop();
+    if (loopStopped) {
+      store.pushPart(session.id, assistant.id, {
+        type: "error",
+        text:
+          `Stopped a loop: the model made the same call ${LOOP_STOP_AT} times in a row and got ` +
+          `the same result each time — ${loopStopped}. Reply to carry on with a different approach.`,
+      });
+      store.updateSession(session.id, {
+        status: "blocked",
+        blockedReason: "Stopped a loop of identical tool calls.",
+      });
+      logLine(
+        "warn",
+        `turn ${session.id} stopped a loop after ${steps} steps: ${loopStopped}`,
+      );
+    }
 
-    const responseMessages = await result.responseMessages;
-    history.appendHistory(session.id, responseMessages as ModelMessage[]);
+    const responseMessages = (await result.responseMessages) as ModelMessage[];
+    history.appendHistory(
+      session.id,
+      dropReasoning
+        ? pruneMessages({ messages: responseMessages, reasoning: "all" })
+        : responseMessages,
+    );
     const tightened = await tighten(
       config,
       session.id,
       agent.model ?? session.model,
       lastStepInput,
+      controller.signal,
     );
     // What the next turn's decision reads: did this conversation's prefix
     // survive between turns, or did it arrive as new tokens?

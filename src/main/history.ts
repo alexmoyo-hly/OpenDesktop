@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ModelMessage } from 'ai'
 import { DATA_DIR } from './config'
@@ -21,16 +21,39 @@ export function getHistory(sessionId: string): ModelMessage[] {
   const path = pathFor(sessionId)
   if (existsSync(path)) {
     try {
-      const parsed = JSON.parse(readFileSync(path, 'utf8')) as ModelMessage[]
+      const parsed = revive(JSON.parse(readFileSync(path, 'utf8')) as ModelMessage[])
       memory.set(sessionId, parsed)
       return parsed
     } catch {
-      /* fall through to empty */
+      // Kept aside so the next write does not replace a transcript that may still be recoverable.
+      renameSync(path, `${path}.corrupt-${Date.now()}`)
     }
   }
   const fresh: ModelMessage[] = []
   memory.set(sessionId, fresh)
   return fresh
+}
+
+type BinaryPart = { type?: string; image?: unknown; data?: unknown; mediaType?: string }
+
+/** JSON turns bytes into `{type:'Buffer',data:[…]}`; the SDK rejects that, so it is turned back into bytes. */
+function revive(messages: ModelMessage[]): ModelMessage[] {
+  return messages.map((message) => {
+    if (!Array.isArray(message.content)) return message
+    let touched = false
+    const content = (message.content as BinaryPart[]).map((part) => {
+      if (part?.type !== 'image' && part?.type !== 'file') return part
+      const key = part.type === 'image' ? 'image' : 'data'
+      const value = part[key] as { type?: string; data?: unknown } | string | undefined
+      if (typeof value === 'string' || value instanceof Uint8Array) return part
+      touched = true
+      if (value?.type === 'Buffer' && Array.isArray(value.data)) {
+        return { ...part, [key]: Uint8Array.from(value.data as number[]) }
+      }
+      return { type: 'text', text: `[an attached ${part.mediaType ?? 'file'} could not be restored from the saved history]` }
+    })
+    return touched ? ({ ...message, content } as ModelMessage) : message
+  })
 }
 
 /* ---------------- where each turn began ---------------- */
@@ -72,7 +95,9 @@ function getMarks(sessionId: string): Record<string, number> {
 
 function persistMarks(sessionId: string): void {
   mkdirSync(HISTORY_DIR, { recursive: true })
-  writeFileSync(marksPathFor(sessionId), JSON.stringify(marks.get(sessionId) ?? {}), 'utf8')
+  const path = marksPathFor(sessionId)
+  writeFileSync(`${path}.tmp`, JSON.stringify(marks.get(sessionId) ?? {}), 'utf8')
+  renameSync(`${path}.tmp`, path)
 }
 
 /** Records where the transcript stood before this turn was added to it. */
@@ -135,7 +160,9 @@ export function appendHistory(sessionId: string, messages: ModelMessage[]): void
 
 export function persist(sessionId: string): void {
   mkdirSync(HISTORY_DIR, { recursive: true })
-  writeFileSync(pathFor(sessionId), JSON.stringify(memory.get(sessionId) ?? []), 'utf8')
+  const path = pathFor(sessionId)
+  writeFileSync(`${path}.tmp`, JSON.stringify(memory.get(sessionId) ?? []), 'utf8')
+  renameSync(`${path}.tmp`, path)
 }
 
 /**

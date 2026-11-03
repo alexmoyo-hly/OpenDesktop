@@ -120,13 +120,24 @@ const DEFAULT_PROVIDERS: Record<string, ProviderConfig> = {
       baseURL: "https://api.helmcode.com/v1",
       apiKey: "{env:HELMCODE_API_KEY}",
     },
+    // deepseek-v4-flash first: glm5.3-flash spends ~14x the reasoning tokens on the same work and ignores reasoning_effort.
     models: {
+      "deepseek-v4-flash": {
+        id: "deepseek-v4-flash",
+        name: "DeepSeek V4 Flash",
+        contextWindow: 1_000_000,
+        reasoning: true,
+        toolCall: true,
+        billing: "flat",
+      },
       "glm5.3-flash": {
         id: "glm5.3-flash",
         name: "GLM 5.3 Flash",
-        contextWindow: 200000,
+        contextWindow: 1_000_000,
+        reasoning: true,
         toolCall: true,
         vision: true,
+        billing: "flat",
       },
     },
   },
@@ -143,7 +154,7 @@ const DEFAULT_ENVIRONMENTS: Record<string, EnvironmentConfig> = {
 export function defaultConfig(): AppConfig {
   return {
     $schema: "https://opendesktop.dev/config.json",
-    model: "helmcode/glm5.3-flash",
+    model: "helmcode/deepseek-v4-flash",
     provider: DEFAULT_PROVIDERS,
     environment: DEFAULT_ENVIRONMENTS,
     agent: {},

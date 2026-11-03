@@ -131,6 +131,16 @@ export function hasOpaqueShellSyntax(command: string): boolean {
   )
 }
 
+// Flags that turn an allowlisted reader (find, rg, git diff/log) into something that runs code or writes files.
+const RUNS_OR_WRITES = ['-exec', '-execdir', '-ok', '-okdir', '-delete', '-fprint', '-fprint0', '-fprintf', '-fls', '--pre', '--pre-glob', '--output']
+
+export function escalates(segment: string): boolean {
+  return segment
+    .replace(/['"\\]/g, '')
+    .split(/\s+/)
+    .some((word) => RUNS_OR_WRITES.some((flag) => word === flag || word.startsWith(`${flag}=`)))
+}
+
 /**
  * The segment of a command that the denylist refuses, or null.
  *
@@ -198,7 +208,7 @@ export function decide(
     if (
       segments.length > 0 &&
       !hasOpaqueShellSyntax(command) &&
-      segments.every((s) => matchesAny(s, permissions.allowlist))
+      segments.every((s) => matchesAny(s, permissions.allowlist) && !escalates(s))
     ) {
       return { mode, preapproved: true }
     }

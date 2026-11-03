@@ -8,6 +8,8 @@ import { bus } from './bus'
 import { DATA_DIR } from './config'
 import { readChanges } from './git'
 import { resolveModel } from './providers'
+import { record as meterRecord } from './meter'
+import { costOf } from '@shared/cost'
 
 /**
  * Keeps concurrent tasks from working past each other.
@@ -258,8 +260,14 @@ async function judge(config: AppConfig, input: { candidate: string; other: strin
       `Working directory: ${input.cwd}\n\n` +
       `Task A (about to start): ${input.candidate}\n` +
       `Task B (already running): ${input.other}\n\n` +
-      'JSON:'
+      'JSON:',
+    // A yes/no in JSON needs no thinking, and a stuck call must not hold the scheduler.
+    reasoning: 'none',
+    maxRetries: 1,
+    abortSignal: AbortSignal.timeout(30_000)
   })
+  const usage = { input: result.usage.inputTokens ?? 0, output: result.usage.outputTokens ?? 0 }
+  meterRecord(config.model, { ...usage, cost: costOf(config, config.model, usage) ?? 0 })
 
   const match = result.text.match(/\{[\s\S]*\}/)
   if (!match) return { related: false, same_files: false, reason: '' }
@@ -355,14 +363,15 @@ export async function assessRelated(
       // The judgement is an optimisation, not a gate. If the model is
       // unreachable the keyword overlap already told us they share a surface,
       // so say so and let both run rather than stalling the queue.
-      // Not remembered: the model being unreachable is a passing condition, and
-      // caching it would keep this guess long after it could be checked.
-      out.push({
+      // Remembered: not caching it re-asked the model every 15-second tick while the task stayed queued.
+      const guess: Relatedness = {
         sessionId: other.id,
         sameFiles: false,
         sameTopic: true,
         why: 'they mention the same things (the model could not be reached to check further)'
-      })
+      }
+      remember(key, guess)
+      out.push(guess)
     }
   }
   return out

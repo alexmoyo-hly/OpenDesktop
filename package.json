@@ -1,7 +1,7 @@
 {
   "name": "opendesktop",
   "version": "0.1.0",
-  "description": "An open desktop agent workspace \u2014 bring your own model.",
+  "description": "An open desktop agent workspace — bring your own model.",
   "main": "./out/main/index.js",
   "private": true,
   "type": "module",
@@ -10,11 +10,13 @@
     "start": "electron-vite preview",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "check": "pnpm typecheck && pnpm test && pnpm smoke",
     "package": "electron-vite build && electron-builder --dir",
     "dist": "electron-vite build && electron-builder",
-    "smoke": "vite build -c vite.smoke.config.ts && OPENDESKTOP_HOME=\"${TMPDIR:-/tmp}/opendesktop-smoke\" node out/smoke/smoke.mjs",
+    "smoke": "vite build -c vite.smoke.config.ts && OPENDESKTOP_HOME=\"$(mktemp -d)\" node out/smoke/smoke.mjs",
     "icon": "electron scripts/make-icon.cjs",
-    "secrets:check": "vite build -c vite.smoke.config.ts && OPENDESKTOP_HOME=\"${TMPDIR:-/tmp}/opendesktop-smoke\" electron out/smoke/secrets-check.mjs",
+    "secrets:check": "vite build -c vite.smoke.config.ts && OPENDESKTOP_HOME=\"$(mktemp -d)\" electron out/smoke/secrets-check.mjs",
     "ui:check": "vite build -c vite.uicheck.config.ts && vite build -c vite.smoke.config.ts && electron out/smoke/ui-check.mjs",
     "local:check": "vite build -c vite.smoke.config.ts && node out/smoke/local-check.mjs",
     "mcp:check": "vite build -c vite.smoke.config.ts && node out/smoke/mcp-check.mjs"
@@ -75,7 +77,8 @@
     "electron-vite": "^5.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite": "^8.3.0"
+    "vite": "^8.3.0",
+    "vitest": "^5.1.0"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.53",

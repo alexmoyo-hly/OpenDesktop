@@ -164,6 +164,8 @@ export interface ProviderConfig {
    * against this.
    */
   allowance?: { tokens?: number; usd?: number; period: "day" | "month" };
+  /** Requests this key may have in flight at once, across every session and subagent. Default 4. */
+  maxConcurrent?: number;
   options: {
     baseURL?: string;
     apiKey?: string;

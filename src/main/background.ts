@@ -120,6 +120,20 @@ export function readBackgroundOutput(id: string, peek = false): {
   return { task: { ...entry.task }, chunk }
 }
 
+/**
+ * Resolves once a task has unread output or has stopped, or after `ms`.
+ * An instant "(nothing new)" made models poll in a loop, one full step per poll.
+ */
+// ponytail: 200ms polling of in-memory state; switch to the publish event if it ever shows in a profile.
+export async function waitForNews(id: string, ms: number, signal?: AbortSignal): Promise<void> {
+  const deadline = Date.now() + ms
+  while (Date.now() < deadline && !signal?.aborted) {
+    const entry = tasks.get(id)
+    if (!entry || entry.task.status !== 'running' || entry.task.output.length > entry.task.readOffset) return
+    await new Promise((resolve) => setTimeout(resolve, 200))
+  }
+}
+
 export function killBackgroundTask(id: string): BackgroundTask | null {
   const entry = tasks.get(id)
   if (!entry) return null

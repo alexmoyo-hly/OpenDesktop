@@ -19,21 +19,16 @@ export interface EffortLevel {
    * all, which some support and most ignore.
    */
   reasoning: 'off' | 'minimal' | 'low' | 'medium' | 'high'
-  /**
-   * The thinking budget in tokens, for providers that take a number rather than
-   * a word. Absent at the bottom of the scale, where thinking is off.
-   */
-  budgetTokens?: number
   /** Share of the configured step ceiling this level allows. */
   steps: number
 }
 
 export const EFFORT_LEVELS: EffortLevel[] = [
   { value: 1, label: 'Minimal', reasoning: 'off', steps: 0.25 },
-  { value: 2, label: 'Low', reasoning: 'low', budgetTokens: 2_048, steps: 0.5 },
-  { value: 3, label: 'Medium', reasoning: 'medium', budgetTokens: 8_192, steps: 1 },
-  { value: 4, label: 'High', reasoning: 'high', budgetTokens: 16_384, steps: 1 },
-  { value: 5, label: 'Max', reasoning: 'high', budgetTokens: 32_768, steps: 1 }
+  { value: 2, label: 'Low', reasoning: 'low', steps: 0.5 },
+  { value: 3, label: 'Medium', reasoning: 'medium', steps: 1 },
+  { value: 4, label: 'High', reasoning: 'high', steps: 1 },
+  { value: 5, label: 'Max', reasoning: 'high', steps: 1 }
 ]
 
 export const DEFAULT_EFFORT = 3
@@ -54,40 +49,14 @@ export function canReason(model: ProviderModelConfig | undefined): boolean {
   return model?.reasoning === true
 }
 
-/**
- * The provider-specific shape for a reasoning setting.
- *
- * Each SDK package spells this differently and there is no common option, so
- * the mapping lives here in one place. Returns nothing when there is nothing to
- * say, which is the usual case.
- */
-export type ReasoningOptions = Record<string, Record<string, import('ai').JSONValue>>
+export type ReasoningLevel = 'none' | 'minimal' | 'low' | 'medium' | 'high'
 
-export function reasoningOptions(
-  npm: string,
-  providerId: string,
-  level: EffortLevel
-): ReasoningOptions | undefined {
-  if (npm === '@ai-sdk/anthropic') {
-    // Anthropic takes a budget and refuses one below 1024, and a thinking
-    // request must not also set a temperature — the runner handles that.
-    return level.budgetTokens
-      ? { anthropic: { thinking: { type: 'enabled', budgetTokens: Math.max(1_024, level.budgetTokens) } } }
-      : { anthropic: { thinking: { type: 'disabled' } } }
-  }
-  if (npm === '@ai-sdk/openai') {
-    return { openai: { reasoningEffort: level.reasoning === 'off' ? 'minimal' : level.reasoning } }
-  }
-  if (npm === '@ai-sdk/google') {
-    return { google: { thinkingConfig: { thinkingBudget: level.budgetTokens ?? 0 } } }
-  }
-  if (npm === '@ai-sdk/openai-compatible') {
-    /*
-     * The OpenAI field, which is what llama.cpp and most gateways read. Sent
-     * under the provider's own id because that is how this SDK forwards extra
-     * body fields, and only ever for a model that declared it reasons.
-     */
-    return { [providerId]: { reasoning_effort: level.reasoning === 'off' ? 'none' : level.reasoning } }
-  }
-  return undefined
+/**
+ * The AI SDK's own `reasoning` call option for this level; each provider package
+ * maps it to its API (adaptive thinking + effort on current Claude models).
+ * Claude Opus 5.5 rejects thinking disabled, so on Anthropic the lowest level is `minimal`.
+ */
+export function reasoningLevel(npm: string, level: EffortLevel): ReasoningLevel {
+  if (level.reasoning !== 'off') return level.reasoning
+  return npm === '@ai-sdk/anthropic' ? 'minimal' : 'none'
 }

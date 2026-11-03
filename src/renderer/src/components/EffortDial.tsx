@@ -127,7 +127,7 @@ export function EffortDial({ session }: { session: Session }): ReactNode {
               <>
                 {level.reasoning === 'off'
                   ? 'No thinking'
-                  : `Thinking ${level.reasoning}${level.budgetTokens ? ` · ${Math.round(level.budgetTokens / 1024)}k` : ''}`}
+                  : `Thinking ${level.reasoning}`}
                 {' · '}
                 {steps} steps
               </>

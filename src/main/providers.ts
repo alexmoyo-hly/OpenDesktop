@@ -2,7 +2,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
-import type { LanguageModel } from 'ai'
+import { wrapLanguageModel, type LanguageModel } from 'ai'
 import type { AppConfig } from '@shared/types'
 import { isLocalProvider } from '@shared/local-model'
 import { loadConfig } from './config'
@@ -114,7 +114,92 @@ export function parseModelRef(ref: string): { providerId: string; modelId: strin
   return { providerId: ref.slice(0, slash), modelId: ref.slice(slash + 1) }
 }
 
+/** Requests one provider key may have in flight at once (Helmcode allows 5 per key). */
+export const DEFAULT_MAX_CONCURRENT = 4
+
+const gates = new Map<string, { active: number; waiting: (() => void)[] }>()
+
+/** Waits for a slot; the returned function gives it back, once. A freed slot goes straight to the next waiter. */
+// ponytail: a request aborted while queued still takes its slot and frees it at once; fine at these queue sizes.
+function acquire(key: string, limit: number): Promise<() => void> {
+  const gate = gates.get(key) ?? { active: 0, waiting: [] }
+  gates.set(key, gate)
+  let released = false
+  const release = (): void => {
+    if (released) return
+    released = true
+    const next = gate.waiting.shift()
+    if (next) next()
+    else gate.active--
+  }
+  if (gate.active < limit) {
+    gate.active++
+    return Promise.resolve(release)
+  }
+  return new Promise((resolve) => gate.waiting.push(() => resolve(release)))
+}
+
+function releasing<T>(source: ReadableStream<T>, release: () => void): ReadableStream<T> {
+  const reader = source.getReader()
+  return new ReadableStream<T>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read()
+        if (done) {
+          release()
+          controller.close()
+        } else controller.enqueue(value)
+      } catch (error) {
+        release()
+        controller.error(error)
+      }
+    },
+    cancel(reason) {
+      release()
+      return reader.cancel(reason)
+    }
+  })
+}
+
+/** Every call through this model — turns, subagents, compaction, the scheduler's judge — shares the provider's slots. */
+function limited(model: LanguageModel, providerId: string, limit: number): LanguageModel {
+  return wrapLanguageModel({
+    model: model as Parameters<typeof wrapLanguageModel>[0]['model'],
+    middleware: {
+      wrapGenerate: async ({ doGenerate }) => {
+        const release = await acquire(providerId, limit)
+        try {
+          return await doGenerate()
+        } finally {
+          release()
+        }
+      },
+      wrapStream: async ({ doStream }) => {
+        const release = await acquire(providerId, limit)
+        try {
+          const result = await doStream()
+          return { ...result, stream: releasing(result.stream, release) }
+        } catch (error) {
+          release()
+          throw error
+        }
+      }
+    }
+  })
+}
+
+const limitFor = (config: AppConfig, providerId: string): number =>
+  Math.max(1, config.provider[providerId]?.maxConcurrent ?? DEFAULT_MAX_CONCURRENT)
+
 export async function resolveModel(config: AppConfig, ref: string): Promise<ResolvedModel> {
+  const resolved = await resolveUnlimited(config, ref)
+  return {
+    ...resolved,
+    model: limited(resolved.model, resolved.providerId, limitFor(config, resolved.providerId))
+  }
+}
+
+async function resolveUnlimited(config: AppConfig, ref: string): Promise<ResolvedModel> {
   const overridden = overrideResolver?.(ref)
   if (overridden) return overridden
 

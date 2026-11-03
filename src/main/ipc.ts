@@ -1147,7 +1147,7 @@ export function registerIpc(): void {
   ipcMain.handle("host:logPath", () => logPath());
   ipcMain.handle("host:revealLog", () => shell.showItemInFolder(logPath()));
   ipcMain.handle("host:openExternal", (_e, url: string) =>
-    shell.openExternal(url),
+    /^https?:\/\//i.test(url) ? shell.openExternal(url) : undefined,
   );
   ipcMain.handle("host:openPath", (_e, path: string) => shell.openPath(path));
 

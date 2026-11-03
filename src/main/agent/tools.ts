@@ -11,6 +11,7 @@ import {
   killBackgroundTask,
   listBackgroundTasks,
   readBackgroundOutput,
+  waitForNews,
   startBackgroundTask
 } from '../background'
 import * as store from '../store'
@@ -510,12 +511,13 @@ export function createTools(ctx: ToolContext): ToolSet {
 
     tools.bash_output = tool({
       description:
-        'Read whatever a background task has produced since the last time you read it. ' +
-        'Returns only the new output, so it is safe to poll.',
+        'Wait up to 20 seconds for new output from a background task (or for it to end), then ' +
+        'return only what arrived since the last read. One call per wait; do other work in between.',
       inputSchema: z.object({
         id: z.string().describe('The id bash returned when it started in the background.')
       }),
       execute: async ({ id }) => {
+        await waitForNews(id, 20_000, ctx.signal)
         const result = readBackgroundOutput(id)
         if (!result) {
           const known = listBackgroundTasks(ctx.sessionId)
@@ -943,7 +945,8 @@ export function createTools(ctx: ToolContext): ToolSet {
     })
   }
 
-  if (enabled(ctx, 'fetch')) {
+  // fetch runs in this process, on the host: in a sandbox it would bypass the container's network scope.
+  if (enabled(ctx, 'fetch') && ctx.runtime.kind !== 'container') {
     tools.fetch = tool({
       description: 'Fetch a URL and return its text. Runs from the machine hosting OpenDesktop.',
       inputSchema: z.object({ url: z.string().url() }),
@@ -1242,8 +1245,9 @@ export function createTools(ctx: ToolContext): ToolSet {
   }
 
   // Subagents. Depth-limited so a misbehaving agent cannot fork forever.
+  // Sandbox-only agents are refused outside a container, so offering them there is a wasted schema and a wasted step.
   const subagents = Object.values(ctx.config.agent).filter(
-    (a) => a.mode === 'subagent' || a.mode === 'all'
+    (a) => (a.mode === 'subagent' || a.mode === 'all') && (!a.sandboxOnly || ctx.runtime.kind === 'container')
   )
   if (enabled(ctx, 'task') && ctx.spawnSubagent && ctx.depth < 2 && subagents.length > 0) {
     tools.task = tool({
