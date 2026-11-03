@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
   AgentConfig,
   AppConfig,
@@ -18,258 +18,335 @@ import type {
   Skill,
   WorktreeOffer,
   WorktreeRemoval,
-  WorktreeStatus
-} from '@shared/types'
-import type { Savings } from '@shared/savings'
-import type { BlameLine, Commit, CommitDetail } from '@shared/history'
-import type { DiscoveredModel } from '@shared/catalog'
-import type { LocalModelStatus } from '@shared/local-model'
-import type { ForensicReport, SandboxScope, SandboxStatus } from '@shared/sandbox'
+  WorktreeStatus,
+} from "@shared/types";
+import type { Savings } from "@shared/savings";
+import type { BlameLine, Commit, CommitDetail } from "@shared/history";
+import type { DiscoveredModel } from "@shared/catalog";
+import type { LocalModelStatus } from "@shared/local-model";
+import type {
+  ForensicReport,
+  SandboxScope,
+  SandboxStatus,
+} from "@shared/sandbox";
 
 const api = {
   config: {
-    get: (): Promise<AppConfig> => ipcRenderer.invoke('config:get'),
-    path: (): Promise<string> => ipcRenderer.invoke('config:path'),
-    getText: (): Promise<string> => ipcRenderer.invoke('config:getText'),
-    setText: (text: string): Promise<AppConfig> => ipcRenderer.invoke('config:setText', text),
-    save: (next: AppConfig): Promise<AppConfig> => ipcRenderer.invoke('config:save', next),
-    reveal: (): Promise<void> => ipcRenderer.invoke('config:reveal'),
-    keyStatus: (): Promise<Record<string, { resolved: boolean; source: string }>> =>
-      ipcRenderer.invoke('host:resolvedConfigCheck')
+    get: (): Promise<AppConfig> => ipcRenderer.invoke("config:get"),
+    path: (): Promise<string> => ipcRenderer.invoke("config:path"),
+    getText: (): Promise<string> => ipcRenderer.invoke("config:getText"),
+    setText: (text: string): Promise<AppConfig> =>
+      ipcRenderer.invoke("config:setText", text),
+    save: (next: AppConfig): Promise<AppConfig> =>
+      ipcRenderer.invoke("config:save", next),
+    reveal: (): Promise<void> => ipcRenderer.invoke("config:reveal"),
+    keyStatus: (): Promise<
+      Record<string, { resolved: boolean; source: string }>
+    > => ipcRenderer.invoke("host:resolvedConfigCheck"),
   },
   agents: {
-    list: (): Promise<Record<string, AgentConfig>> => ipcRenderer.invoke('agents:list'),
-    dir: (): Promise<string> => ipcRenderer.invoke('agents:dir'),
-    save: (agent: AgentConfig): Promise<AgentConfig> => ipcRenderer.invoke('agents:save', agent),
-    remove: (id: string): Promise<void> => ipcRenderer.invoke('agents:delete', id),
-    reveal: (id: string): Promise<void> => ipcRenderer.invoke('agents:reveal', id),
-    importable: (): Promise<{ id: string; name: string; description: string }[]> =>
-      ipcRenderer.invoke('agents:importable'),
-    importFrom: (ids: string[]): Promise<number> => ipcRenderer.invoke('agents:import', ids)
+    list: (): Promise<Record<string, AgentConfig>> =>
+      ipcRenderer.invoke("agents:list"),
+    dir: (): Promise<string> => ipcRenderer.invoke("agents:dir"),
+    save: (agent: AgentConfig): Promise<AgentConfig> =>
+      ipcRenderer.invoke("agents:save", agent),
+    remove: (id: string): Promise<void> =>
+      ipcRenderer.invoke("agents:delete", id),
+    reveal: (id: string): Promise<void> =>
+      ipcRenderer.invoke("agents:reveal", id),
+    importable: (): Promise<
+      { id: string; name: string; description: string }[]
+    > => ipcRenderer.invoke("agents:importable"),
+    importFrom: (ids: string[]): Promise<number> =>
+      ipcRenderer.invoke("agents:import", ids),
   },
   skills: {
-    list: (): Promise<Skill[]> => ipcRenderer.invoke('skills:list'),
-    dir: (): Promise<string> => ipcRenderer.invoke('skills:dir'),
-    remove: (id: string): Promise<void> => ipcRenderer.invoke('skills:delete', id),
-    reveal: (): Promise<void> => ipcRenderer.invoke('skills:reveal'),
+    list: (): Promise<Skill[]> => ipcRenderer.invoke("skills:list"),
+    dir: (): Promise<string> => ipcRenderer.invoke("skills:dir"),
+    remove: (id: string): Promise<void> =>
+      ipcRenderer.invoke("skills:delete", id),
+    reveal: (): Promise<void> => ipcRenderer.invoke("skills:reveal"),
     importable: (): Promise<(Skill & { alreadyHere: boolean })[]> =>
-      ipcRenderer.invoke('skills:importable'),
-    importFrom: (ids: string[]): Promise<number> => ipcRenderer.invoke('skills:import', ids)
+      ipcRenderer.invoke("skills:importable"),
+    importFrom: (ids: string[]): Promise<number> =>
+      ipcRenderer.invoke("skills:import", ids),
   },
   secrets: {
     status: (): Promise<{
-      available: boolean
-      path: string
-      failed: string[]
-      hints: Record<string, string | null>
-    }> =>
-      ipcRenderer.invoke('secrets:status'),
+      available: boolean;
+      path: string;
+      failed: string[];
+      hints: Record<string, string | null>;
+    }> => ipcRenderer.invoke("secrets:status"),
     set: (name: string, value: string): Promise<string | null> =>
-      ipcRenderer.invoke('secrets:set', name, value),
-    remove: (name: string): Promise<void> => ipcRenderer.invoke('secrets:delete', name)
+      ipcRenderer.invoke("secrets:set", name, value),
+    remove: (name: string): Promise<void> =>
+      ipcRenderer.invoke("secrets:delete", name),
   },
   models: {
     list: (): Promise<{ ref: string; label: string; provider: string }[]> =>
-      ipcRenderer.invoke('models:list'),
+      ipcRenderer.invoke("models:list"),
     /** What this provider's key can see. Ids, names and context windows; never prices. */
-    discover: (providerId: string): Promise<{ models: DiscoveredModel[]; error?: string }> =>
-      ipcRenderer.invoke('models:discover', providerId)
+    discover: (
+      providerId: string,
+    ): Promise<{ models: DiscoveredModel[]; error?: string }> =>
+      ipcRenderer.invoke("models:discover", providerId),
   },
   meter: {
-    get: (): Promise<Record<string, MeterEntry>> => ipcRenderer.invoke('meter:get'),
-    reset: (): Promise<Record<string, MeterEntry>> => ipcRenderer.invoke('meter:reset')
+    get: (): Promise<Record<string, MeterEntry>> =>
+      ipcRenderer.invoke("meter:get"),
+    reset: (): Promise<Record<string, MeterEntry>> =>
+      ipcRenderer.invoke("meter:reset"),
   },
   /** The model that runs on this machine, and the sidecar that serves it. */
   local: {
-    status: (): Promise<LocalModelStatus> => ipcRenderer.invoke('local:status'),
+    status: (): Promise<LocalModelStatus> => ipcRenderer.invoke("local:status"),
     install: (modelId?: string): Promise<LocalModelStatus> =>
-      ipcRenderer.invoke('local:install', modelId),
+      ipcRenderer.invoke("local:install", modelId),
     start: (modelId?: string): Promise<LocalModelStatus> =>
-      ipcRenderer.invoke('local:start', modelId),
-    stop: (): Promise<LocalModelStatus> => ipcRenderer.invoke('local:stop'),
+      ipcRenderer.invoke("local:start", modelId),
+    stop: (): Promise<LocalModelStatus> => ipcRenderer.invoke("local:stop"),
     remove: (modelId?: string): Promise<LocalModelStatus> =>
-      ipcRenderer.invoke('local:remove', modelId)
+      ipcRenderer.invoke("local:remove", modelId),
   },
   /** The pentesting sandbox: Docker preflight, image build, and the scope gate. */
   sandbox: {
-    status: (): Promise<SandboxStatus> => ipcRenderer.invoke('sandbox:status'),
-    build: (): Promise<SandboxStatus> => ipcRenderer.invoke('sandbox:build'),
+    status: (): Promise<SandboxStatus> => ipcRenderer.invoke("sandbox:status"),
+    build: (): Promise<SandboxStatus> => ipcRenderer.invoke("sandbox:build"),
     /** Declare the authorised target(s) and open egress to exactly them. */
     openScope: (
       sessionId: string,
       targets: string[],
-      note: string
+      note: string,
     ): Promise<{ error?: string; scope?: SandboxScope }> =>
-      ipcRenderer.invoke('sandbox:scope', sessionId, targets, note),
+      ipcRenderer.invoke("sandbox:scope", sessionId, targets, note),
     clearScope: (sessionId: string): Promise<boolean> =>
-      ipcRenderer.invoke('sandbox:clearScope', sessionId),
+      ipcRenderer.invoke("sandbox:clearScope", sessionId),
     /** The flight recorder's deterministic read, for the sandbox forensics line. */
     forensics: (sessionId: string): Promise<ForensicReport> =>
-      ipcRenderer.invoke('forensics:report', sessionId)
+      ipcRenderer.invoke("forensics:report", sessionId),
   },
   /** Tool servers: what is declared, what it offers, and what it weighs. */
   mcp: {
-    list: (): Promise<McpStatus[]> => ipcRenderer.invoke('mcp:list'),
-    connect: (id: string): Promise<McpStatus | null> => ipcRenderer.invoke('mcp:connect', id),
-    stop: (id?: string): Promise<McpStatus[]> => ipcRenderer.invoke('mcp:stop', id)
+    list: (): Promise<McpStatus[]> => ipcRenderer.invoke("mcp:list"),
+    connect: (id: string): Promise<McpStatus | null> =>
+      ipcRenderer.invoke("mcp:connect", id),
+    stop: (id?: string): Promise<McpStatus[]> =>
+      ipcRenderer.invoke("mcp:stop", id),
   },
   rtk: {
     status: (
       environmentId: string,
-      probe?: boolean
-    ): Promise<{ state: 'ready' | 'missing' | 'too-old' | 'unknown'; version?: string; message?: string }> =>
-      ipcRenderer.invoke('rtk:status', environmentId, probe),
+      probe?: boolean,
+    ): Promise<{
+      state: "ready" | "missing" | "too-old" | "unknown";
+      version?: string;
+      message?: string;
+    }> => ipcRenderer.invoke("rtk:status", environmentId, probe),
     install: (
-      environmentId: string
+      environmentId: string,
     ): Promise<{ ok: boolean; version?: string; message: string }> =>
-      ipcRenderer.invoke('rtk:install', environmentId)
+      ipcRenderer.invoke("rtk:install", environmentId),
   },
   /** The history beside the working tree: what happened before now. */
   history: {
     log: (
       environmentId: string,
       cwd: string,
-      options?: { limit?: number; path?: string }
-    ): Promise<Commit[]> => ipcRenderer.invoke('git:log', environmentId, cwd, options),
-    commit: (environmentId: string, cwd: string, hash: string): Promise<CommitDetail> =>
-      ipcRenderer.invoke('git:commit', environmentId, cwd, hash),
-    fileAt: (environmentId: string, cwd: string, hash: string, path: string): Promise<string> =>
-      ipcRenderer.invoke('git:fileAt', environmentId, cwd, hash, path),
+      options?: { limit?: number; path?: string },
+    ): Promise<Commit[]> =>
+      ipcRenderer.invoke("git:log", environmentId, cwd, options),
+    commit: (
+      environmentId: string,
+      cwd: string,
+      hash: string,
+    ): Promise<CommitDetail> =>
+      ipcRenderer.invoke("git:commit", environmentId, cwd, hash),
+    fileAt: (
+      environmentId: string,
+      cwd: string,
+      hash: string,
+      path: string,
+    ): Promise<string> =>
+      ipcRenderer.invoke("git:fileAt", environmentId, cwd, hash, path),
     blame: (
       environmentId: string,
       cwd: string,
       path: string,
-      options?: { from?: number; lines?: number }
-    ): Promise<BlameLine[]> => ipcRenderer.invoke('git:blame', environmentId, cwd, path, options)
+      options?: { from?: number; lines?: number },
+    ): Promise<BlameLine[]> =>
+      ipcRenderer.invoke("git:blame", environmentId, cwd, path, options),
   },
   env: {
-    test: (id: string): Promise<{ ok: boolean; message: string }> => ipcRenderer.invoke('env:test', id),
-    home: (id: string): Promise<string> => ipcRenderer.invoke('env:home', id),
+    test: (id: string): Promise<{ ok: boolean; message: string }> =>
+      ipcRenderer.invoke("env:test", id),
+    home: (id: string): Promise<string> => ipcRenderer.invoke("env:home", id),
     sshAliases: (): Promise<
-      { alias: string; host?: string; username?: string; port?: number; identityFile?: string }[]
-    > => ipcRenderer.invoke('env:sshAliases')
+      {
+        alias: string;
+        host?: string;
+        username?: string;
+        port?: number;
+        identityFile?: string;
+      }[]
+    > => ipcRenderer.invoke("env:sshAliases"),
   },
   sessions: {
-    list: (): Promise<Session[]> => ipcRenderer.invoke('session:list'),
+    list: (): Promise<Session[]> => ipcRenderer.invoke("session:list"),
     /** Other conversations that have changed the same files as this one. */
     neighbours: (sessionId: string): Promise<Neighbour[]> =>
-      ipcRenderer.invoke('coordination:neighbours', sessionId),
+      ipcRenderer.invoke("coordination:neighbours", sessionId),
     /** A checkout of its own, for a conversation on somebody's repository. */
     worktree: {
       offer: (sessionId: string): Promise<WorktreeOffer> =>
-        ipcRenderer.invoke('worktree:offer', sessionId),
+        ipcRenderer.invoke("worktree:offer", sessionId),
       create: (sessionId: string): Promise<{ error?: string }> =>
-        ipcRenderer.invoke('worktree:create', sessionId),
+        ipcRenderer.invoke("worktree:create", sessionId),
       remove: (sessionId: string): Promise<WorktreeRemoval> =>
-        ipcRenderer.invoke('worktree:remove', sessionId),
+        ipcRenderer.invoke("worktree:remove", sessionId),
       status: (sessionId: string): Promise<WorktreeStatus | null> =>
-        ipcRenderer.invoke('worktree:status', sessionId)
+        ipcRenderer.invoke("worktree:status", sessionId),
     },
     create: (input: {
-      cwd?: string
-      environmentId?: string
-      agentId?: string
-      model?: string
-      title?: string
-      savings?: Partial<Savings>
-      autoApprove?: boolean
-    }): Promise<Session> => ipcRenderer.invoke('session:create', input),
-    update: (id: string, patch: Partial<Session>): Promise<Session | undefined> =>
-      ipcRenderer.invoke('session:update', id, patch),
-    remove: (id: string): Promise<void> => ipcRenderer.invoke('session:delete', id),
-    clear: (id: string): Promise<Session | undefined> => ipcRenderer.invoke('session:clear', id),
+      cwd?: string;
+      environmentId?: string;
+      agentId?: string;
+      model?: string;
+      title?: string;
+      savings?: Partial<Savings>;
+      autoApprove?: boolean;
+    }): Promise<Session> => ipcRenderer.invoke("session:create", input),
+    update: (
+      id: string,
+      patch: Partial<Session>,
+    ): Promise<Session | undefined> =>
+      ipcRenderer.invoke("session:update", id, patch),
+    remove: (id: string): Promise<void> =>
+      ipcRenderer.invoke("session:delete", id),
+    clear: (id: string): Promise<Session | undefined> =>
+      ipcRenderer.invoke("session:clear", id),
     fork: (
       id: string,
-      target?: { boardId?: string; columnId?: string }
-    ): Promise<Session | undefined> => ipcRenderer.invoke('session:fork', id, target),
-    compact: (id: string): Promise<boolean> => ipcRenderer.invoke('session:compact', id),
+      target?: { boardId?: string; columnId?: string },
+    ): Promise<Session | undefined> =>
+      ipcRenderer.invoke("session:fork", id, target),
+    compact: (id: string): Promise<boolean> =>
+      ipcRenderer.invoke("session:compact", id),
     rewind: (
       id: string,
-      messageId: string
+      messageId: string,
     ): Promise<
       | { ok: true; text: string; attachments: Attachment[]; removed: number }
       | { ok: false; reason: string }
-    > => ipcRenderer.invoke('session:rewind', id, messageId),
+    > => ipcRenderer.invoke("session:rewind", id, messageId),
     forkFrom: (
       id: string,
-      messageId: string
-    ): Promise<{ ok: true; sessionId: string } | { ok: false; reason: string }> =>
-      ipcRenderer.invoke('session:forkFrom', id, messageId),
-    messages: (id: string): Promise<Message[]> => ipcRenderer.invoke('session:messages', id),
-    blocks: (id: string): Promise<Block[]> => ipcRenderer.invoke('session:blocks', id),
-    running: (id: string): Promise<boolean> => ipcRenderer.invoke('session:running', id)
+      messageId: string,
+    ): Promise<
+      { ok: true; sessionId: string } | { ok: false; reason: string }
+    > => ipcRenderer.invoke("session:forkFrom", id, messageId),
+    messages: (id: string): Promise<Message[]> =>
+      ipcRenderer.invoke("session:messages", id),
+    blocks: (id: string): Promise<Block[]> =>
+      ipcRenderer.invoke("session:blocks", id),
+    running: (id: string): Promise<boolean> =>
+      ipcRenderer.invoke("session:running", id),
   },
   shell: {
     run: (
       sessionId: string,
-      command: string
+      command: string,
     ): Promise<{ stdout: string; stderr: string; exitCode: number }> =>
-      ipcRenderer.invoke('shell:run', sessionId, command)
+      ipcRenderer.invoke("shell:run", sessionId, command),
   },
   boards: {
-    list: (): Promise<Board[]> => ipcRenderer.invoke('board:list'),
-    create: (input: { name?: string; cwd?: string; environmentId?: string }): Promise<Board> =>
-      ipcRenderer.invoke('board:create', input),
+    list: (): Promise<Board[]> => ipcRenderer.invoke("board:list"),
+    create: (input: {
+      name?: string;
+      cwd?: string;
+      environmentId?: string;
+    }): Promise<Board> => ipcRenderer.invoke("board:create", input),
     update: (id: string, patch: Partial<Board>): Promise<Board | undefined> =>
-      ipcRenderer.invoke('board:update', id, patch),
-    remove: (id: string): Promise<void> => ipcRenderer.invoke('board:delete', id),
+      ipcRenderer.invoke("board:update", id, patch),
+    remove: (id: string): Promise<void> =>
+      ipcRenderer.invoke("board:delete", id),
     createTask: (input: {
-      boardId?: string
-      columnId?: string
-      title?: string
-      prompt?: string
-      agentId?: string
-      model?: string
-      parentSessionId?: string
-    }): Promise<Session | undefined> => ipcRenderer.invoke('board:createTask', input),
+      boardId?: string;
+      columnId?: string;
+      title?: string;
+      prompt?: string;
+      agentId?: string;
+      model?: string;
+      parentSessionId?: string;
+    }): Promise<Session | undefined> =>
+      ipcRenderer.invoke("board:createTask", input),
     moveTask: (input: {
-      sessionId: string
-      boardId: string
-      columnId: string
-      order?: number
-    }): Promise<Session | undefined> => ipcRenderer.invoke('board:moveTask', input),
+      sessionId: string;
+      boardId: string;
+      columnId: string;
+      order?: number;
+    }): Promise<Session | undefined> =>
+      ipcRenderer.invoke("board:moveTask", input),
     addSession: (input: {
-      sessionId: string
-      boardId: string
-      columnId?: string
-    }): Promise<Session | undefined> => ipcRenderer.invoke('board:addSession', input),
+      sessionId: string;
+      boardId: string;
+      columnId?: string;
+    }): Promise<Session | undefined> =>
+      ipcRenderer.invoke("board:addSession", input),
     removeSession: (sessionId: string): Promise<Session | undefined> =>
-      ipcRenderer.invoke('board:removeSession', sessionId)
+      ipcRenderer.invoke("board:removeSession", sessionId),
   },
   attachments: {
-    pick: (sessionId: string): Promise<{ added: Attachment[]; errors: string[] }> =>
-      ipcRenderer.invoke('attachments:pick', sessionId),
+    pick: (
+      sessionId: string,
+    ): Promise<{ added: Attachment[]; errors: string[] }> =>
+      ipcRenderer.invoke("attachments:pick", sessionId),
     addPaths: (
       sessionId: string,
-      paths: string[]
+      paths: string[],
     ): Promise<{ added: Attachment[]; errors: string[] }> =>
-      ipcRenderer.invoke('attachments:addPaths', sessionId, paths),
+      ipcRenderer.invoke("attachments:addPaths", sessionId, paths),
     addBytes: (
       sessionId: string,
       name: string,
       mediaType: string,
-      bytes: Uint8Array
+      bytes: Uint8Array,
     ): Promise<{ added: Attachment[]; errors: string[] }> =>
-      ipcRenderer.invoke('attachments:addBytes', sessionId, name, mediaType, bytes),
-    remove: (path: string): Promise<void> => ipcRenderer.invoke('attachments:remove', path),
+      ipcRenderer.invoke(
+        "attachments:addBytes",
+        sessionId,
+        name,
+        mediaType,
+        bytes,
+      ),
+    remove: (path: string): Promise<void> =>
+      ipcRenderer.invoke("attachments:remove", path),
     accepted: (model: string): Promise<{ images: boolean }> =>
-      ipcRenderer.invoke('attachments:accepted', model),
+      ipcRenderer.invoke("attachments:accepted", model),
     /** Electron no longer exposes File.path; this is the supported way. */
-    pathFor: (file: File): string => webUtils.getPathForFile(file)
+    pathFor: (file: File): string => webUtils.getPathForFile(file),
   },
   turn: {
-    send: (sessionId: string, text: string, attachments?: Attachment[]): Promise<boolean> =>
-      ipcRenderer.invoke('turn:send', sessionId, text, attachments),
-    stop: (sessionId: string): Promise<void> => ipcRenderer.invoke('turn:stop', sessionId)
+    send: (
+      sessionId: string,
+      text: string,
+      attachments?: Attachment[],
+    ): Promise<boolean> =>
+      ipcRenderer.invoke("turn:send", sessionId, text, attachments),
+    stop: (sessionId: string): Promise<void> =>
+      ipcRenderer.invoke("turn:stop", sessionId),
   },
   approvals: {
-    list: (): Promise<ApprovalRequest[]> => ipcRenderer.invoke('approval:list'),
-    resolve: (id: string, answer: 'once' | 'always' | 'reject'): Promise<void> =>
-      ipcRenderer.invoke('approval:resolve', id, answer)
+    list: (): Promise<ApprovalRequest[]> => ipcRenderer.invoke("approval:list"),
+    resolve: (
+      id: string,
+      answer: "once" | "always" | "reject",
+    ): Promise<void> => ipcRenderer.invoke("approval:resolve", id, answer),
   },
   activity: {
-    all: (limit?: number): Promise<Block[]> => ipcRenderer.invoke('blocks:all', limit),
-    folders: (): Promise<string[]> => ipcRenderer.invoke('blocks:folders')
+    all: (limit?: number): Promise<Block[]> =>
+      ipcRenderer.invoke("blocks:all", limit),
+    folders: (): Promise<string[]> => ipcRenderer.invoke("blocks:folders"),
   },
   files: {
     list: (
@@ -277,37 +354,41 @@ const api = {
       path: string,
       // A sandbox has one container per session, so file reads on a container
       // environment carry the session id to pick the right one.
-      sessionId?: string
+      sessionId?: string,
       // A folder that is not there comes back as an error to show, not a throw.
     ): Promise<{ path: string; entries: FileEntry[]; error?: string }> =>
-      ipcRenderer.invoke('fs:list', environmentId, path, sessionId),
-    read: (environmentId: string, path: string, sessionId?: string): Promise<string> =>
-      ipcRenderer.invoke('fs:read', environmentId, path, sessionId),
+      ipcRenderer.invoke("fs:list", environmentId, path, sessionId),
+    read: (
+      environmentId: string,
+      path: string,
+      sessionId?: string,
+    ): Promise<string> =>
+      ipcRenderer.invoke("fs:read", environmentId, path, sessionId),
     browse: (
       environmentId: string,
-      path: string
+      path: string,
     ): Promise<{
-      path: string
-      home: string
-      parent: string | null
-      dirs: string[]
-      error?: string
-    }> => ipcRenderer.invoke('fs:browse', environmentId, path),
+      path: string;
+      home: string;
+      parent: string | null;
+      dirs: string[];
+      error?: string;
+    }> => ipcRenderer.invoke("fs:browse", environmentId, path),
     findDirs: (
       environmentId: string,
       cwd: string,
-      refresh?: boolean
+      refresh?: boolean,
     ): Promise<{
-      root: string
-      dirs: string[]
-      truncated: boolean
-      builtAt: number
-      error?: string
-    }> => ipcRenderer.invoke('fs:findDirs', environmentId, cwd, refresh),
+      root: string;
+      dirs: string[];
+      truncated: boolean;
+      builtAt: number;
+      error?: string;
+    }> => ipcRenderer.invoke("fs:findDirs", environmentId, cwd, refresh),
     previewUrl: (environmentId: string, path: string): Promise<string> =>
-      ipcRenderer.invoke('preview:url', environmentId, path),
+      ipcRenderer.invoke("preview:url", environmentId, path),
     /** Where conversations' own folders live, for deciding what a path is. */
-    workspacesRoot: (): Promise<string> => ipcRenderer.invoke('workspace:root'),
+    workspacesRoot: (): Promise<string> => ipcRenderer.invoke("workspace:root"),
     /**
      * For the editor pane, where a failure is a thing to show rather than an
      * exception in a promise nobody awaited.
@@ -315,75 +396,101 @@ const api = {
     open: (
       environmentId: string,
       path: string,
-      sessionId?: string
+      sessionId?: string,
     ): Promise<{ text: string; error?: string }> =>
-      ipcRenderer.invoke('editor:read', environmentId, path, sessionId),
+      ipcRenderer.invoke("editor:read", environmentId, path, sessionId),
     save: (
       environmentId: string,
       path: string,
       text: string,
-      sessionId?: string
+      sessionId?: string,
     ): Promise<{ error?: string }> =>
-      ipcRenderer.invoke('editor:write', environmentId, path, text, sessionId),
+      ipcRenderer.invoke("editor:write", environmentId, path, text, sessionId),
     stat: (
       environmentId: string,
       path: string,
-      sessionId?: string
+      sessionId?: string,
     ): Promise<{ size: number; modifiedAt: number } | null> =>
-      ipcRenderer.invoke('fs:stat', environmentId, path, sessionId),
+      ipcRenderer.invoke("fs:stat", environmentId, path, sessionId),
     download: (
       environmentId: string,
       path: string,
-      sessionId?: string
+      sessionId?: string,
     ): Promise<{ saved: boolean; path?: string; error?: string }> =>
-      ipcRenderer.invoke('fs:download', environmentId, path, sessionId)
+      ipcRenderer.invoke("fs:download", environmentId, path, sessionId),
   },
   terminal: {
     create: (input: {
-      environmentId: string
-      cwd: string
-      cols: number
-      rows: number
-    }): Promise<{ id: string; buffer: string }> => ipcRenderer.invoke('terminal:create', input),
-    write: (id: string, data: string): Promise<void> => ipcRenderer.invoke('terminal:write', id, data),
+      environmentId: string;
+      cwd: string;
+      cols: number;
+      rows: number;
+    }): Promise<{ id: string; buffer: string }> =>
+      ipcRenderer.invoke("terminal:create", input),
+    write: (id: string, data: string): Promise<void> =>
+      ipcRenderer.invoke("terminal:write", id, data),
     resize: (id: string, cols: number, rows: number): Promise<void> =>
-      ipcRenderer.invoke('terminal:resize', id, cols, rows),
-    kill: (id: string): Promise<void> => ipcRenderer.invoke('terminal:kill', id),
-    buffer: (id: string): Promise<string> => ipcRenderer.invoke('terminal:buffer', id)
+      ipcRenderer.invoke("terminal:resize", id, cols, rows),
+    kill: (id: string): Promise<void> =>
+      ipcRenderer.invoke("terminal:kill", id),
+    buffer: (id: string): Promise<string> =>
+      ipcRenderer.invoke("terminal:buffer", id),
   },
   background: {
     list: (sessionId?: string): Promise<BackgroundTask[]> =>
-      ipcRenderer.invoke('background:list', sessionId),
-    kill: (id: string): Promise<BackgroundTask | null> => ipcRenderer.invoke('background:kill', id),
-    clear: (sessionId?: string): Promise<number> => ipcRenderer.invoke('background:clear', sessionId),
-    peek: (id: string): Promise<{ task: BackgroundTask; chunk: string } | null> =>
-      ipcRenderer.invoke('background:peek', id)
+      ipcRenderer.invoke("background:list", sessionId),
+    kill: (id: string): Promise<BackgroundTask | null> =>
+      ipcRenderer.invoke("background:kill", id),
+    clear: (sessionId?: string): Promise<number> =>
+      ipcRenderer.invoke("background:clear", sessionId),
+    peek: (
+      id: string,
+    ): Promise<{ task: BackgroundTask; chunk: string } | null> =>
+      ipcRenderer.invoke("background:peek", id),
   },
   git: {
     changes: (environmentId: string, cwd: string): Promise<RepoChanges> =>
-      ipcRenderer.invoke('git:changes', environmentId, cwd),
+      ipcRenderer.invoke("git:changes", environmentId, cwd),
     summary: (
       environmentId: string,
-      cwd: string
+      cwd: string,
     ): Promise<{ isRepo: boolean; branch: string; dirty: number }> =>
-      ipcRenderer.invoke('git:summary', environmentId, cwd),
-    diff: (environmentId: string, cwd: string, path: string, untracked: boolean): Promise<string> =>
-      ipcRenderer.invoke('git:diff', environmentId, cwd, path, untracked)
+      ipcRenderer.invoke("git:summary", environmentId, cwd),
+    diff: (
+      environmentId: string,
+      cwd: string,
+      path: string,
+      untracked: boolean,
+    ): Promise<string> =>
+      ipcRenderer.invoke("git:diff", environmentId, cwd, path, untracked),
+  },
+  /**
+   * The app's own notifications. Only the two questions the settings page
+   * cannot answer by itself: whether this machine can do it at all, and whether
+   * it does — a switch nobody can test is a switch nobody trusts.
+   */
+  notifications: {
+    supported: (): Promise<boolean> =>
+      ipcRenderer.invoke("notifications:supported"),
+    test: (): Promise<boolean> => ipcRenderer.invoke("notifications:test"),
   },
   host: {
-    pickFolder: (): Promise<string | null> => ipcRenderer.invoke('host:pickFolder'),
-    logPath: (): Promise<string> => ipcRenderer.invoke('host:logPath'),
-    revealLog: (): Promise<void> => ipcRenderer.invoke('host:revealLog'),
-    openExternal: (url: string): Promise<void> => ipcRenderer.invoke('host:openExternal', url),
-    openPath: (path: string): Promise<string> => ipcRenderer.invoke('host:openPath', path)
+    pickFolder: (): Promise<string | null> =>
+      ipcRenderer.invoke("host:pickFolder"),
+    logPath: (): Promise<string> => ipcRenderer.invoke("host:logPath"),
+    revealLog: (): Promise<void> => ipcRenderer.invoke("host:revealLog"),
+    openExternal: (url: string): Promise<void> =>
+      ipcRenderer.invoke("host:openExternal", url),
+    openPath: (path: string): Promise<string> =>
+      ipcRenderer.invoke("host:openPath", path),
   },
   onEvent: (listener: (event: AppEvent) => void): (() => void) => {
-    const handler = (_e: unknown, event: AppEvent): void => listener(event)
-    ipcRenderer.on('app:event', handler)
-    return () => ipcRenderer.off('app:event', handler)
-  }
-}
+    const handler = (_e: unknown, event: AppEvent): void => listener(event);
+    ipcRenderer.on("app:event", handler);
+    return () => ipcRenderer.off("app:event", handler);
+  },
+};
 
-export type OpenDesktopApi = typeof api
+export type OpenDesktopApi = typeof api;
 
-contextBridge.exposeInMainWorld('opendesktop', api)
+contextBridge.exposeInMainWorld("opendesktop", api);

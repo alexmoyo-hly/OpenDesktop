@@ -1,14 +1,16 @@
-import clsx from 'clsx'
+import clsx from "clsx";
 import {
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
-  type ReactNode
-} from 'react'
+  type ReactNode,
+} from "react";
 import {
   Archive,
   ArchiveRestore,
+  Bell,
+  BellOff,
   Check,
   ChevronRight,
   CircleCheck,
@@ -22,40 +24,44 @@ import {
   Pin,
   PinOff,
   SquareTerminal,
-  Trash2
-} from 'lucide-react'
-import type { Session } from '@shared/types'
-import { columnOfKind } from '@shared/boards'
-import { useStore } from '../state/store'
-import { couldHaveWorktree, giveWorktree, returnFromWorktree } from '../lib/worktree'
-import { folderName } from '../lib/format'
-import { DiffSquare } from './icons'
+  Trash2,
+} from "lucide-react";
+import type { Session } from "@shared/types";
+import { columnOfKind } from "@shared/boards";
+import { useStore } from "../state/store";
+import {
+  couldHaveWorktree,
+  giveWorktree,
+  returnFromWorktree,
+} from "../lib/worktree";
+import { folderName } from "../lib/format";
+import { DiffSquare } from "./icons";
 
 interface Item {
-  key: string
-  label: string
-  icon?: ReactNode
+  key: string;
+  label: string;
+  icon?: ReactNode;
   /** The letter that runs it while the menu is open, as in the reference. */
-  shortcut?: string
-  danger?: boolean
-  onSelect?: () => void
-  submenu?: Item[]
-  checked?: boolean
-  separatorBefore?: boolean
+  shortcut?: string;
+  danger?: boolean;
+  onSelect?: () => void;
+  submenu?: Item[];
+  checked?: boolean;
+  separatorBefore?: boolean;
 }
 
 function Row({
   item,
   open,
   onOpen,
-  onRun
+  onRun,
 }: {
-  item: Item
-  open: boolean
-  onOpen: () => void
-  onRun: (item: Item) => void
+  item: Item;
+  open: boolean;
+  onOpen: () => void;
+  onRun: (item: Item) => void;
 }): ReactNode {
-  const hasSub = Boolean(item.submenu)
+  const hasSub = Boolean(item.submenu);
   return (
     <div className="relative">
       <button
@@ -63,15 +69,29 @@ function Row({
         onMouseEnter={onOpen}
         onClick={() => (hasSub ? onOpen() : onRun(item))}
         className={clsx(
-          'flex w-full items-center gap-2 rounded-md px-2.5 py-[6px] text-left text-[13px]',
-          item.danger ? 'text-bad hover:bg-bad/10' : open ? 'bg-ink-800 text-ink-100' : 'text-ink-200 hover:bg-ink-800'
+          "flex w-full items-center gap-2 rounded-md px-2.5 py-[6px] text-left text-[13px]",
+          item.danger
+            ? "text-bad hover:bg-bad/10"
+            : open
+              ? "bg-ink-800 text-ink-100"
+              : "text-ink-200 hover:bg-ink-800",
         )}
       >
-        {item.icon ? <span className="text-ink-500 shrink-0">{item.icon}</span> : null}
+        {item.icon ? (
+          <span className="text-ink-500 shrink-0">{item.icon}</span>
+        ) : null}
         <span className="flex-1 truncate">{item.label}</span>
-        {item.checked ? <Check className="text-brand h-3.5 w-3.5 shrink-0" /> : null}
-        {item.shortcut ? <span className="text-ink-600 shrink-0 text-[11.5px]">{item.shortcut}</span> : null}
-        {hasSub ? <ChevronRight className="text-ink-600 h-3.5 w-3.5 shrink-0" /> : null}
+        {item.checked ? (
+          <Check className="text-brand h-3.5 w-3.5 shrink-0" />
+        ) : null}
+        {item.shortcut ? (
+          <span className="text-ink-600 shrink-0 text-[11.5px]">
+            {item.shortcut}
+          </span>
+        ) : null}
+        {hasSub ? (
+          <ChevronRight className="text-ink-600 h-3.5 w-3.5 shrink-0" />
+        ) : null}
       </button>
 
       {open && item.submenu ? (
@@ -83,170 +103,236 @@ function Row({
               onClick={() => onRun(child)}
               className="text-ink-200 hover:bg-ink-800 flex w-full items-center gap-2 rounded-md px-2.5 py-[6px] text-left text-[13px]"
             >
-              {child.icon ? <span className="text-ink-500 shrink-0">{child.icon}</span> : null}
+              {child.icon ? (
+                <span className="text-ink-500 shrink-0">{child.icon}</span>
+              ) : null}
               <span className="flex-1 truncate">{child.label}</span>
-              {child.checked ? <Check className="text-brand h-3.5 w-3.5 shrink-0" /> : null}
+              {child.checked ? (
+                <Check className="text-brand h-3.5 w-3.5 shrink-0" />
+              ) : null}
             </button>
           ))}
         </div>
       ) : null}
     </div>
-  )
+  );
 }
 
 /** Everything you can do to one session, from its row in the list. */
 export function SessionMenu({ session }: { session: Session }): ReactNode {
-  const boards = useStore((s) => s.boards)
-  const openDock = useStore((s) => s.openDock)
-  const selectSession = useStore((s) => s.selectSession)
-  const startRename = useStore((s) => s.startRename)
-  const setView = useStore((s) => s.setView)
-  const selectBoard = useStore((s) => s.selectBoard)
-  const openTask = useStore((s) => s.openTask)
+  const boards = useStore((s) => s.boards);
+  const openDock = useStore((s) => s.openDock);
+  const selectSession = useStore((s) => s.selectSession);
+  const startRename = useStore((s) => s.startRename);
+  const setView = useStore((s) => s.setView);
+  const selectBoard = useStore((s) => s.selectBoard);
+  const openTask = useStore((s) => s.openTask);
 
-  const [open, setOpen] = useState(false)
-  const [submenu, setSubmenu] = useState<string | null>(null)
-  const [anchor, setAnchor] = useState({ top: 0, left: 0 })
-  const button = useRef<HTMLButtonElement>(null)
-  const panel = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false);
+  const [submenu, setSubmenu] = useState<string | null>(null);
+  const [anchor, setAnchor] = useState({ top: 0, left: 0 });
+  const button = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
 
   // Portalled, because the session list scrolls and a scroll container clips
   // both axes — the submenus would be cut off at the sidebar's edge.
   useLayoutEffect(() => {
-    if (!open || !button.current) return
-    const rect = button.current.getBoundingClientRect()
-    const width = 232
+    if (!open || !button.current) return;
+    const rect = button.current.getBoundingClientRect();
+    const width = 232;
     setAnchor({
       top: Math.min(rect.bottom + 4, window.innerHeight - 380),
-      left: Math.min(rect.left, window.innerWidth - width - 264)
-    })
-  }, [open])
+      left: Math.min(rect.left, window.innerWidth - width - 264),
+    });
+  }, [open]);
 
   const patch = (next: Partial<Session>): void => {
-    void window.opendesktop.sessions.update(session.id, next)
-  }
+    void window.opendesktop.sessions.update(session.id, next);
+  };
 
-  const board = boards.find((candidate) => candidate.id === session.boardId)
-  const workspacesRoot = useStore((s) => s.workspacesRoot)
+  const board = boards.find((candidate) => candidate.id === session.boardId);
+  const workspacesRoot = useStore((s) => s.workspacesRoot);
 
   const items: Item[] = [
     {
-      key: 'open-in',
-      label: 'Open in',
+      key: "open-in",
+      label: "Open in",
       submenu: [
         {
-          key: 'terminal',
-          label: 'Terminal',
+          key: "terminal",
+          label: "Terminal",
           icon: <SquareTerminal className="h-3.5 w-3.5" />,
           onSelect: () => {
-            void selectSession(session.id)
-            openDock('terminal')
-          }
+            void selectSession(session.id);
+            openDock("terminal");
+          },
         },
         {
-          key: 'files',
-          label: 'Files',
+          key: "files",
+          label: "Files",
           icon: <FolderOpen className="h-3.5 w-3.5" />,
           onSelect: () => {
-            void selectSession(session.id)
-            openDock('files')
-          }
+            void selectSession(session.id);
+            openDock("files");
+          },
         },
         {
-          key: 'changes',
-          label: 'Changes',
+          key: "changes",
+          label: "Changes",
           icon: <DiffSquare className="h-3.5 w-3.5" />,
           onSelect: () => {
-            void selectSession(session.id)
-            openDock('changes')
-          }
+            void selectSession(session.id);
+            openDock("changes");
+          },
         },
         // Only for local work: the path belongs to the remote machine otherwise.
-        ...(session.environmentId === 'local'
+        ...(session.environmentId === "local"
           ? [
               {
-                key: 'finder',
-                label: 'Finder',
+                key: "finder",
+                label: "Finder",
                 icon: <FolderOpen className="h-3.5 w-3.5" />,
-                onSelect: () => void window.opendesktop.host.openPath(session.cwd)
-              }
+                onSelect: () =>
+                  void window.opendesktop.host.openPath(session.cwd),
+              },
             ]
           : []),
         ...(board
           ? [
               {
-                key: 'board',
+                key: "board",
                 label: `Board · ${board.name}`,
                 icon: <Columns3 className="h-3.5 w-3.5" />,
                 onSelect: () => {
-                  selectBoard(board.id)
-                  setView('board')
-                  void openTask(session.id)
-                }
-              }
+                  selectBoard(board.id);
+                  setView("board");
+                  void openTask(session.id);
+                },
+              },
             ]
-          : [])
-      ]
+          : []),
+      ],
     },
     {
-      key: 'pin',
-      label: session.pinned ? 'Unpin' : 'Pin',
-      shortcut: 'P',
+      key: "pin",
+      label: session.pinned ? "Unpin" : "Pin",
+      shortcut: "P",
       separatorBefore: true,
-      icon: session.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />,
-      onSelect: () => patch({ pinned: !session.pinned })
+      icon: session.pinned ? (
+        <PinOff className="h-3.5 w-3.5" />
+      ) : (
+        <Pin className="h-3.5 w-3.5" />
+      ),
+      onSelect: () => patch({ pinned: !session.pinned }),
     },
     {
-      key: 'complete',
-      label: session.status === 'done' ? 'Mark as not completed' : 'Mark as completed',
-      shortcut: 'U',
+      key: "complete",
+      label:
+        session.status === "done"
+          ? "Mark as not completed"
+          : "Mark as completed",
+      shortcut: "U",
       icon:
-        session.status === 'done' ? (
+        session.status === "done" ? (
           <CircleSlash className="h-3.5 w-3.5" />
         ) : (
           <CircleCheck className="h-3.5 w-3.5" />
         ),
-      onSelect: () => patch({ status: session.status === 'done' ? 'idle' : 'done' })
+      onSelect: () =>
+        patch({ status: session.status === "done" ? "idle" : "done" }),
+    },
+    /*
+     * This conversation's own answer to "should I be told?".
+     *
+     * Three states rather than a switch, because muting is not the only thing
+     * worth saying: a long task you started and walked away from wants all of
+     * it, and a chat kept beside a browser wants only the part waiting on you.
+     * Absent — "Follow the app" — is what every session starts as.
+     */
+    {
+      key: "notify",
+      label:
+        session.notify === "muted"
+          ? "Notifications — muted"
+          : session.notify === "attention"
+            ? "Notifications — when it needs me"
+            : "Notifications",
+      icon:
+        session.notify === "muted" ? (
+          <BellOff className="h-3.5 w-3.5" />
+        ) : (
+          <Bell className="h-3.5 w-3.5" />
+        ),
+      submenu: [
+        {
+          key: "notify-default",
+          label: "Follow the app",
+          checked: session.notify === undefined,
+          onSelect: () => patch({ notify: undefined }),
+        },
+        {
+          key: "notify-all",
+          label: "Every turn",
+          checked: session.notify === "all",
+          onSelect: () => patch({ notify: "all" }),
+        },
+        {
+          key: "notify-attention",
+          label: "Only when it needs me",
+          checked: session.notify === "attention",
+          onSelect: () => patch({ notify: "attention" }),
+        },
+        {
+          key: "notify-muted",
+          label: "Muted",
+          checked: session.notify === "muted",
+          onSelect: () => patch({ notify: "muted" }),
+        },
+      ],
     },
     {
-      key: 'rename',
-      label: 'Rename',
-      shortcut: 'R',
+      key: "rename",
+      label: "Rename",
+      shortcut: "R",
       icon: <Pencil className="h-3.5 w-3.5" />,
-      onSelect: () => startRename(session.id)
+      onSelect: () => startRename(session.id),
     },
     {
-      key: 'fork',
-      label: 'Fork',
-      shortcut: 'F',
+      key: "fork",
+      label: "Fork",
+      shortcut: "F",
       icon: <GitFork className="h-3.5 w-3.5" />,
       onSelect: async () => {
-        const forked = await window.opendesktop.sessions.fork(session.id)
-        if (forked) await selectSession(forked.id)
-      }
+        const forked = await window.opendesktop.sessions.fork(session.id);
+        if (forked) await selectSession(forked.id);
+      },
     },
     {
-      key: 'fork-to',
-      label: 'Fork onto board',
+      key: "fork-to",
+      label: "Fork onto board",
       icon: <GitFork className="h-3.5 w-3.5" />,
       submenu:
         boards.length === 0
-          ? [{ key: 'none', label: 'No boards yet' }]
+          ? [{ key: "none", label: "No boards yet" }]
           : boards.map((candidate) => ({
               key: candidate.id,
               label: `${candidate.name} · ${folderName(candidate.cwd)}`,
               onSelect: async () => {
-                const column = columnOfKind(candidate, 'backlog') ?? candidate.columns[0]
-                const forked = await window.opendesktop.sessions.fork(session.id, {
-                  boardId: candidate.id,
-                  columnId: column.id
-                })
-                if (!forked) return
-                selectBoard(candidate.id)
-                setView('board')
-                await openTask(forked.id)
-              }
-            }))
+                const column =
+                  columnOfKind(candidate, "backlog") ?? candidate.columns[0];
+                const forked = await window.opendesktop.sessions.fork(
+                  session.id,
+                  {
+                    boardId: candidate.id,
+                    columnId: column.id,
+                  },
+                );
+                if (!forked) return;
+                selectBoard(candidate.id);
+                setView("board");
+                await openTask(forked.id);
+              },
+            })),
     },
     /*
      * A checkout of its own, which is the strong version of everything else
@@ -257,36 +343,37 @@ export function SessionMenu({ session }: { session: Session }): ReactNode {
     ...(session.worktree
       ? [
           {
-            key: 'worktree-off',
+            key: "worktree-off",
             label: `Return to ${folderName(session.worktree.repoRoot)}`,
             separatorBefore: true,
             icon: <GitBranch className="h-3.5 w-3.5" />,
-            onSelect: () => void returnFromWorktree(session)
-          }
+            onSelect: () => void returnFromWorktree(session),
+          },
         ]
       : couldHaveWorktree(session, workspacesRoot)
         ? [
             {
-              key: 'worktree-on',
-              label: 'Work on a branch of its own',
+              key: "worktree-on",
+              label: "Work on a branch of its own",
               separatorBefore: true,
               icon: <GitBranch className="h-3.5 w-3.5" />,
-              onSelect: () => void giveWorktree(session)
-            }
+              onSelect: () => void giveWorktree(session),
+            },
           ]
         : []),
     {
-      key: 'board',
-      label: 'Board',
-      shortcut: 'B',
+      key: "board",
+      label: "Board",
+      shortcut: "B",
       separatorBefore: true,
       icon: <Columns3 className="h-3.5 w-3.5" />,
       submenu: [
         {
-          key: 'none',
-          label: 'None — just a chat',
+          key: "none",
+          label: "None — just a chat",
           checked: !session.boardId,
-          onSelect: () => void window.opendesktop.boards.removeSession(session.id)
+          onSelect: () =>
+            void window.opendesktop.boards.removeSession(session.id),
         },
         ...boards.map((candidate) => ({
           key: candidate.id,
@@ -295,74 +382,77 @@ export function SessionMenu({ session }: { session: Session }): ReactNode {
           onSelect: () =>
             void window.opendesktop.boards.addSession({
               sessionId: session.id,
-              boardId: candidate.id
-            })
-        }))
-      ]
+              boardId: candidate.id,
+            }),
+        })),
+      ],
     },
     {
-      key: 'archive',
-      label: session.archived ? 'Unarchive' : 'Archive',
-      shortcut: 'A',
+      key: "archive",
+      label: session.archived ? "Unarchive" : "Archive",
+      shortcut: "A",
       separatorBefore: true,
       icon: session.archived ? (
         <ArchiveRestore className="h-3.5 w-3.5" />
       ) : (
         <Archive className="h-3.5 w-3.5" />
       ),
-      onSelect: () => patch({ archived: !session.archived })
+      onSelect: () => patch({ archived: !session.archived }),
     },
     {
-      key: 'delete',
-      label: 'Delete',
-      shortcut: 'D',
+      key: "delete",
+      label: "Delete",
+      shortcut: "D",
       danger: true,
       icon: <Trash2 className="h-3.5 w-3.5" />,
-      onSelect: () => void window.opendesktop.sessions.remove(session.id)
-    }
-  ]
+      onSelect: () => void window.opendesktop.sessions.remove(session.id),
+    },
+  ];
 
   const close = (): void => {
-    setOpen(false)
-    setSubmenu(null)
-  }
+    setOpen(false);
+    setSubmenu(null);
+  };
 
   const run = (item: Item): void => {
-    if (!item.onSelect) return
-    close()
-    void item.onSelect()
-  }
+    if (!item.onSelect) return;
+    close();
+    void item.onSelect();
+  };
 
   useEffect(() => {
-    if (!open) return
+    if (!open) return;
     const onDown = (event: MouseEvent): void => {
-      const target = event.target as Node
-      if (!button.current?.contains(target) && !panel.current?.contains(target)) close()
-    }
+      const target = event.target as Node;
+      if (!button.current?.contains(target) && !panel.current?.contains(target))
+        close();
+    };
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        close()
-        return
+      if (event.key === "Escape") {
+        close();
+        return;
       }
       // The letters in the reference are accelerators, live while it is open.
       const hit = items.find(
-        (item) => item.shortcut && item.shortcut.toLowerCase() === event.key.toLowerCase()
-      )
+        (item) =>
+          item.shortcut &&
+          item.shortcut.toLowerCase() === event.key.toLowerCase(),
+      );
       if (hit && !hit.submenu) {
-        event.preventDefault()
-        run(hit)
+        event.preventDefault();
+        run(hit);
       } else if (hit) {
-        event.preventDefault()
-        setSubmenu(hit.key)
+        event.preventDefault();
+        setSubmenu(hit.key);
       }
-    }
-    window.addEventListener('mousedown', onDown)
-    window.addEventListener('keydown', onKey)
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
     return () => {
-      window.removeEventListener('mousedown', onDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  })
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  });
 
   return (
     <>
@@ -371,13 +461,15 @@ export function SessionMenu({ session }: { session: Session }): ReactNode {
         type="button"
         title="More"
         onClick={(event) => {
-          event.stopPropagation()
-          setOpen(!open)
-          setSubmenu(null)
+          event.stopPropagation();
+          setOpen(!open);
+          setSubmenu(null);
         }}
         className={clsx(
-          'shrink-0 rounded p-0.5',
-          open ? 'text-ink-100' : 'text-ink-600 hover:text-ink-200 opacity-0 group-hover:opacity-100'
+          "shrink-0 rounded p-0.5",
+          open
+            ? "text-ink-100"
+            : "text-ink-600 hover:text-ink-200 opacity-0 group-hover:opacity-100",
         )}
       >
         <MoreVertical className="h-3.5 w-3.5" />
@@ -392,7 +484,9 @@ export function SessionMenu({ session }: { session: Session }): ReactNode {
         >
           {items.map((item) => (
             <div key={item.key}>
-              {item.separatorBefore ? <div className="bg-ink-800 my-1 h-px" /> : null}
+              {item.separatorBefore ? (
+                <div className="bg-ink-800 my-1 h-px" />
+              ) : null}
               <Row
                 item={item}
                 open={submenu === item.key}
@@ -404,5 +498,5 @@ export function SessionMenu({ session }: { session: Session }): ReactNode {
         </div>
       ) : null}
     </>
-  )
+  );
 }

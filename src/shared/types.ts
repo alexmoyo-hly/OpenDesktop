@@ -1,11 +1,18 @@
 /** Shared types between the main process, the preload bridge and the renderer. */
 
-import type { LegacyMode, Savings } from './savings'
-import type { Billing } from './routing'
-import type { LocalModelStatus } from './local-model'
-import type { SandboxScope, SandboxStatus } from './sandbox'
+import type { LegacyMode, Savings } from "./savings";
+import type { Billing } from "./routing";
+import type { LocalModelStatus } from "./local-model";
+import type { SandboxScope, SandboxStatus } from "./sandbox";
+import type { NotificationsConfig, SessionNotify } from "./notifications";
 
-export type BlockStatus = 'pending' | 'awaiting-approval' | 'running' | 'success' | 'error' | 'canceled'
+export type BlockStatus =
+  | "pending"
+  | "awaiting-approval"
+  | "running"
+  | "success"
+  | "error"
+  | "canceled";
 
 /**
  * `queued` waits for the scheduler to free a slot; `blocked` waits for a human;
@@ -13,48 +20,48 @@ export type BlockStatus = 'pending' | 'awaiting-approval' | 'running' | 'success
  * idle/running/awaiting-approval/error, exactly as before.
  */
 export type SessionStatus =
-  | 'idle'
-  | 'queued'
-  | 'running'
-  | 'awaiting-approval'
-  | 'blocked'
-  | 'error'
-  | 'done'
+  | "idle"
+  | "queued"
+  | "running"
+  | "awaiting-approval"
+  | "blocked"
+  | "error"
+  | "done";
 
-export type EnvironmentKind = 'local' | 'ssh' | 'gcp-workstation' | 'container'
+export type EnvironmentKind = "local" | "ssh" | "gcp-workstation" | "container";
 
 export interface EnvironmentConfig {
-  id: string
-  name: string
-  kind: EnvironmentKind
+  id: string;
+  name: string;
+  kind: EnvironmentKind;
   /** Default working directory for new sessions on this environment. */
-  cwd?: string
+  cwd?: string;
   /** Reached through `gcloud workstations start-tcp-tunnel`, then plain SSH. */
   workstation?: {
-    project: string
-    region: string
-    cluster: string
-    config: string
-    workstation: string
+    project: string;
+    region: string;
+    cluster: string;
+    config: string;
+    workstation: string;
     /** The login on the workstation; gcloud defaults this to "user". */
-    user?: string
+    user?: string;
     /** Pass --start-workstation, which boots a stopped workstation. */
-    startWorkstation?: boolean
+    startWorkstation?: boolean;
     /** Key gcloud provisions for workstation access. */
-    privateKey?: string
-  }
+    privateKey?: string;
+  };
   ssh?: {
-    host: string
-    port?: number
-    username?: string
+    host: string;
+    port?: number;
+    username?: string;
     /** Path to a private key file. Supports {env:VAR} expansion. */
-    privateKey?: string
-    passphrase?: string
-    password?: string
+    privateKey?: string;
+    passphrase?: string;
+    password?: string;
     /** Read host/user/key from ~/.ssh/config for this alias instead. */
-    alias?: string
-    keepaliveInterval?: number
-  }
+    alias?: string;
+    keepaliveInterval?: number;
+  };
   /**
    * The pentesting sandbox. A `container` environment runs each session in a
    * throwaway Docker container with no network until a target is authorised —
@@ -63,41 +70,41 @@ export interface EnvironmentConfig {
    */
   container?: {
     /** Override the built image tag. Rare; the default is the one we build. */
-    image?: string
-  }
+    image?: string;
+  };
 }
 
 export interface Attachment {
-  id: string
-  name: string
-  mediaType: string
-  size: number
+  id: string;
+  name: string;
+  mediaType: string;
+  size: number;
   /** Images need a model that can read them; text is inlined and always works. */
-  kind: 'image' | 'text' | 'binary'
+  kind: "image" | "text" | "binary";
   /** A copy kept beside the session, so the transcript survives the original moving. */
-  path: string
+  path: string;
   /** Present for text: the contents, inlined into the prompt. */
-  text?: string
+  text?: string;
 }
 
 export interface ProviderModelConfig {
-  id: string
-  name: string
+  id: string;
+  name: string;
   /** Advertised context window, used for the token meter. */
-  contextWindow?: number
-  maxOutputTokens?: number
-  reasoning?: boolean
-  toolCall?: boolean
+  contextWindow?: number;
+  maxOutputTokens?: number;
+  reasoning?: boolean;
+  toolCall?: boolean;
   /** Declared, not detected: an OpenAI-compatible endpoint cannot be asked. */
-  vision?: boolean
+  vision?: boolean;
   /**
    * What the model costs, in whole currency units per million tokens — the way
    * every provider publishes it, so it can be copied across without arithmetic.
    * Absent means unknown, and unknown is shown as nothing rather than as zero.
    */
   price?: {
-    input?: number
-    output?: number
+    input?: number;
+    output?: number;
     /**
      * What a cached input token costs, and what it costs to write one. Unset,
      * the usual convention is assumed — a tenth of the input price to read and
@@ -105,17 +112,17 @@ export interface ProviderModelConfig {
      * not say so is still charging that way, and counting a cache read at full
      * price overstates every figure this app shows.
      */
-    cacheRead?: number
-    cacheWrite?: number
-  }
+    cacheRead?: number;
+    cacheWrite?: number;
+  };
   /**
    * How this model is paid for. It changes what the next token costs, which is
    * what the router balances: a flat-rate model is paid for whether it is used
    * or not, so at the margin it is the cheapest thing there is.
    */
-  billing?: Billing
+  billing?: Billing;
   /** What the subscription costs, for `flat`. Informational; nothing divides by it. */
-  monthlyCost?: number
+  monthlyCost?: number;
   /**
    * The quota, for `allowance`, counted from what this app has spent.
    *
@@ -124,30 +131,30 @@ export interface ProviderModelConfig {
    * into tokens would need a price per model to be exactly right anyway. When
    * both are set, whichever runs out first ends the free part.
    */
-  allowance?: { tokens?: number; usd?: number; period: 'day' | 'month' }
+  allowance?: { tokens?: number; usd?: number; period: "day" | "month" };
   /**
    * 1 (cheap) to 5 (expensive), relative to the other models declared here.
    * Absent is read off the price, so a config written before this existed
    * still routes sensibly.
    */
-  cost?: number
+  cost?: number;
   /** 1 (modest) to 5 (strong): what the router means by capable. */
-  iq?: number
+  iq?: number;
 }
 
 /** What the settings page reads for one model: tokens and money, by period. */
 export interface MeterEntry {
-  day: number
-  month: number
-  dayCost: number
-  monthCost: number
+  day: number;
+  month: number;
+  dayCost: number;
+  monthCost: number;
 }
 
 export interface ProviderConfig {
-  id: string
+  id: string;
   /** The AI SDK package that backs this provider. */
-  npm: string
-  name: string
+  npm: string;
+  name: string;
   /**
    * A cap on the whole key, shared by every model under it.
    *
@@ -156,14 +163,14 @@ export interface ProviderConfig {
    * with its own `allowance` uses that instead; everything else here counts
    * against this.
    */
-  allowance?: { tokens?: number; usd?: number; period: 'day' | 'month' }
+  allowance?: { tokens?: number; usd?: number; period: "day" | "month" };
   options: {
-    baseURL?: string
-    apiKey?: string
-    headers?: Record<string, string>
-    [key: string]: unknown
-  }
-  models: Record<string, ProviderModelConfig>
+    baseURL?: string;
+    apiKey?: string;
+    headers?: Record<string, string>;
+    [key: string]: unknown;
+  };
+  models: Record<string, ProviderModelConfig>;
 }
 
 /**
@@ -176,29 +183,29 @@ export interface ProviderConfig {
  * turn on for the conversation that needs it.
  */
 export interface McpServerConfig {
-  id: string
-  name: string
+  id: string;
+  name: string;
   /** The command that speaks MCP on its stdin and stdout. */
-  command: string
-  args?: string[]
+  command: string;
+  args?: string[];
   /** Added to the environment the command gets, which never has this app's keys in it. */
-  env?: Record<string, string>
-  cwd?: string
+  env?: Record<string, string>;
+  cwd?: string;
 }
 
 /** What a declared server turned out to be, once somebody asked it. */
 export interface McpStatus {
-  id: string
-  name: string
-  state: 'idle' | 'starting' | 'ready' | 'failed'
-  tools: { name: string; description: string }[]
+  id: string;
+  name: string;
+  state: "idle" | "starting" | "ready" | "failed";
+  tools: { name: string; description: string }[];
   /**
    * What its schemas add to the prefix of every step of every turn. The number
    * that decides whether a server is worth switching on, which is why it is
    * measured rather than described.
    */
-  tokens: number
-  message?: string
+  tokens: number;
+  message?: string;
 }
 
 /**
@@ -206,7 +213,7 @@ export interface McpStatus {
  * learn and these are the ones with a use: stop something, react to it, or
  * tidy up after the whole turn.
  */
-export type HookEvent = 'before' | 'after' | 'turn'
+export type HookEvent = "before" | "after" | "turn";
 
 /**
  * A command this app runs when the agent does something.
@@ -218,70 +225,70 @@ export type HookEvent = 'before' | 'after' | 'turn'
  * reaches the model.
  */
 export interface HookConfig {
-  id: string
-  name?: string
-  event: HookEvent
+  id: string;
+  name?: string;
+  event: HookEvent;
   /** A regular expression over the tool name. Absent means every tool. */
-  matcher?: string
+  matcher?: string;
   /** Shell, run on the session's execution target in its working directory. */
-  command: string
-  timeoutMs?: number
-  enabled?: boolean
+  command: string;
+  timeoutMs?: number;
+  enabled?: boolean;
 }
 
-export type PermissionMode = 'ask' | 'allow' | 'deny'
+export type PermissionMode = "ask" | "allow" | "deny";
 
 export interface Permissions {
-  bash: PermissionMode
-  edit: PermissionMode
-  write: PermissionMode
-  read: PermissionMode
-  fetch: PermissionMode
+  bash: PermissionMode;
+  edit: PermissionMode;
+  write: PermissionMode;
+  read: PermissionMode;
+  fetch: PermissionMode;
   /**
    * Calling a tool that belongs to an MCP server, which is a program this app
    * did not write doing something it did not define. Asked by default, and
    * asked per tool rather than per server: "connect the ticket tracker" is not
    * the same decision as "close this ticket".
    */
-  mcp: PermissionMode
+  mcp: PermissionMode;
   /** Commands matching these glob-ish patterns skip the bash prompt. */
-  allowlist: string[]
+  allowlist: string[];
   /** Commands matching these are always refused. */
-  denylist: string[]
+  denylist: string[];
 }
 
-export type AgentMode = 'primary' | 'subagent' | 'all'
+export type AgentMode = "primary" | "subagent" | "all";
 
 export interface AgentConfig {
-  id: string
-  name: string
-  description: string
-  mode: AgentMode
+  id: string;
+  name: string;
+  description: string;
+  mode: AgentMode;
   /** `provider/model`. Falls back to the global model when omitted. */
-  model?: string
-  prompt?: string
-  temperature?: number
+  model?: string;
+  prompt?: string;
+  temperature?: number;
   /** Tool name -> enabled. Unlisted tools default to enabled. */
-  tools?: Record<string, boolean>
-  permissions?: Partial<Permissions>
-  color?: string
+  tools?: Record<string, boolean>;
+  permissions?: Partial<Permissions>;
+  color?: string;
   /**
    * True for the pentesting agents: they run only in a `container` environment,
    * are refused anywhere else, and are offered by the picker only on a sandbox
    * session. The tools they reach for do not exist outside the image anyway;
    * this makes that a rule rather than an accident.
    */
-  sandboxOnly?: boolean
+  sandboxOnly?: boolean;
 }
 
 export interface Skill {
-  id: string
-  name: string
-  description: string
+  id: string;
+  name: string;
+  description: string;
   /** Directory on disk, so instructions can point the agent at its own files. */
-  path: string
-  files: string[]
-  instructions: string
+  path: string;
+  files: string[];
+  instructions: string;
 }
 
 /**
@@ -289,44 +296,44 @@ export interface Skill {
  * off the parts that are genuinely someone else's, so there is nothing to pick
  * before starting — naming an agent is something you do mid-sentence, with @.
  */
-export const MANAGER_AGENT = 'manager'
+export const MANAGER_AGENT = "manager";
 
 /** What the manager used to be called. Sessions on disk still say this. */
-export const AUTO_AGENT = 'auto'
+export const AUTO_AGENT = "auto";
 
 /** Whether an id means "the manager", including the name it used to have. */
 export function isManager(agentId: string | undefined): boolean {
-  return agentId === MANAGER_AGENT || agentId === AUTO_AGENT || !agentId
+  return agentId === MANAGER_AGENT || agentId === AUTO_AGENT || !agentId;
 }
 
 export interface AppConfig {
-  $schema?: string
-  model: string
-  smallModel?: string
-  provider: Record<string, ProviderConfig>
-  environment: Record<string, EnvironmentConfig>
-  agent: Record<string, AgentConfig>
+  $schema?: string;
+  model: string;
+  smallModel?: string;
+  provider: Record<string, ProviderConfig>;
+  environment: Record<string, EnvironmentConfig>;
+  agent: Record<string, AgentConfig>;
   /** Tool servers, declared here and enabled per session. */
-  mcp?: Record<string, McpServerConfig>
+  mcp?: Record<string, McpServerConfig>;
   /** Commands the app runs around a tool call or a turn. Cost no tokens. */
-  hooks?: HookConfig[]
-  permissions: Permissions
-  maxSteps: number
+  hooks?: HookConfig[];
+  permissions: Permissions;
+  maxSteps: number;
   /** What a session starts with, unless it says otherwise. */
-  savings?: Partial<Savings>
+  savings?: Partial<Savings>;
   /** The single mode this used to be. Read for compatibility, never written. */
-  mode?: LegacyMode
+  mode?: LegacyMode;
   /** Whether a new session starts without approval prompts. */
-  autoApprove?: boolean
+  autoApprove?: boolean;
   /**
    * What shunt delegates reading to, as `provider/model`. Unset, the cheapest
    * model that clears the capability floor is chosen for each job.
    */
-  shuntModel?: string
+  shuntModel?: string;
   /** Who is asked how to do something hard. Unset, the most capable declared. */
-  plannerModel?: string
+  plannerModel?: string;
   /** Whole-file reads longer than this are refused while shunt is on. */
-  shuntMinLines?: number
+  shuntMinLines?: number;
   /**
    * Share of the usable window at which old tool output stops being resent.
    *
@@ -338,9 +345,9 @@ export interface AppConfig {
    * transcript is left byte-for-byte alone and the cache does the saving;
    * above it, resending really is the bigger cost.
    */
-  dehydrateAtFraction?: number
+  dehydrateAtFraction?: number;
   /** How many board tasks the scheduler will run at once. */
-  maxConcurrentTasks?: number
+  maxConcurrentTasks?: number;
   /**
    * What one turn may spend before it is stopped, in tokens across all its
    * steps, and in wall-clock milliseconds.
@@ -352,7 +359,7 @@ export interface AppConfig {
    * turn that hits one is handed back rather than failed, so replying carries
    * it on.
    */
-  maxTurnTokens?: number
+  maxTurnTokens?: number;
   /**
    * A hard wall on the clock. Off by default, and deliberately: the clock
    * measures how long a turn took, not whether any of it was wasted. Most of
@@ -361,7 +368,7 @@ export interface AppConfig {
    * a runaway is `maxTurnTokens` and the step ceiling, which measure the two
    * things a runaway actually consumes.
    */
-  maxTurnMs?: number
+  maxTurnMs?: number;
   /**
    * How long a turn may show no sign of life before it is stopped.
    *
@@ -370,7 +377,7 @@ export interface AppConfig {
    * turn waiting on a command, or on a human to approve one, is alive and is
    * never counted here.
    */
-  maxQuietMs?: number
+  maxQuietMs?: number;
   /**
    * How many subagents one agent may have working at the same time.
    *
@@ -379,104 +386,112 @@ export interface AppConfig {
    * concurrency ceiling answers that by making all of them slow. Extra calls
    * wait for a slot and then run; nothing is dropped.
    */
-  maxParallelSubagents?: number
+  maxParallelSubagents?: number;
   /** Share of a model's usable window at which the transcript is summarised. */
-  compactAtFraction?: number
+  compactAtFraction?: number;
   /** How many messages stay verbatim after a summary. */
-  keepRecentMessages?: number
+  keepRecentMessages?: number;
   /**
    * Tool output older than this many turns stops being resent, replaced by a
    * note naming the call that produced it. Free, and usually a bigger saving
    * than summarising.
    */
-  dehydrateAfterTurns?: number
+  dehydrateAfterTurns?: number;
   /** Outputs smaller than this are left alone; the saving would not pay. */
-  dehydrateOverChars?: number
+  dehydrateOverChars?: number;
   /**
    * Milliseconds between words when re-chunking the model's text for display.
    * 0 disables the smoothing and shows provider chunks as they arrive.
    */
-  smoothStreamMs: number
-  theme: 'dark' | 'light' | 'system'
+  smoothStreamMs: number;
+  theme: "dark" | "light" | "system";
+  /**
+   * Whether the app tells you a turn ended while you were elsewhere, and how.
+   *
+   * Shown from the app itself, not from a hook that shells out to `osascript`:
+   * a notification is the one thing that should come from the window it is
+   * about, so clicking it brings that conversation back.
+   */
+  notifications?: NotificationsConfig;
 }
 
 export interface Block {
-  id: string
-  sessionId: string
-  messageId: string
+  id: string;
+  sessionId: string;
+  messageId: string;
   /** Tool name: bash, read, write, edit, grep, glob, list, fetch, task... */
-  tool: string
+  tool: string;
   /** One-line summary shown collapsed, e.g. the command itself. */
-  title: string
+  title: string;
   /** Second line of context, e.g. relative path or host. */
-  subtitle?: string
-  status: BlockStatus
-  input: Record<string, unknown>
-  output: string
+  subtitle?: string;
+  status: BlockStatus;
+  input: Record<string, unknown>;
+  output: string;
   /** Truncated stdout/stderr stream for live display. */
-  error?: string
-  exitCode?: number
+  error?: string;
+  exitCode?: number;
   /** Line counts for write/edit, so the transcript can summarise a group. */
-  added?: number
-  removed?: number
-  cwd: string
-  environmentId: string
-  agentId: string
-  createdAt: number
-  startedAt?: number
-  endedAt?: number
+  added?: number;
+  removed?: number;
+  cwd: string;
+  environmentId: string;
+  agentId: string;
+  createdAt: number;
+  startedAt?: number;
+  endedAt?: number;
   /** Set when the block is a subagent's work, pointing at the parent task block. */
-  parentBlockId?: string
-  approvalId?: string
+  parentBlockId?: string;
+  approvalId?: string;
 }
 
-export type MessagePartType = 'text' | 'reasoning' | 'block' | 'error'
+export type MessagePartType = "text" | "reasoning" | "block" | "error";
 
 export interface MessagePart {
-  type: MessagePartType
+  type: MessagePartType;
   /** For text/reasoning/error parts. */
-  text?: string
+  text?: string;
   /** For block parts. */
-  blockId?: string
+  blockId?: string;
 }
 
 export interface Message {
-  id: string
-  sessionId: string
-  role: 'user' | 'assistant' | 'system'
-  parts: MessagePart[]
-  attachments?: Attachment[]
-  agentId?: string
-  model?: string
-  createdAt: number
-  completedAt?: number
+  id: string;
+  sessionId: string;
+  role: "user" | "assistant" | "system";
+  parts: MessagePart[];
+  attachments?: Attachment[];
+  agentId?: string;
+  model?: string;
+  createdAt: number;
+  completedAt?: number;
   /**
    * Recorded as the turn ends, cost included. Kept rather than recomputed, so
    * changing a price later does not rewrite what past turns are said to have
    * cost.
    */
-  usage?: { input: number; output: number; reasoning?: number; cost?: number }
+  usage?: { input: number; output: number; reasoning?: number; cost?: number };
 }
 
 export interface Session {
-  id: string
-  title: string
-  cwd: string
-  environmentId: string
-  agentId: string
-  model: string
+  id: string;
+  title: string;
+  cwd: string;
+  environmentId: string;
+  agentId: string;
+  model: string;
   /**
    * This session's own switches. A key that is absent follows the app; that is
    * not the same as `false`, which is this session saying no.
    */
-  savings?: Partial<Savings>
+  savings?: Partial<Savings>;
   /** What a session stored before there were two switches. Read, never written. */
-  mode?: LegacyMode
+  mode?: LegacyMode;
   /**
    * Run without asking: every `ask` becomes `allow` for this session. The
    * denylist and anything set to `deny` are unaffected.
    */
-  autoApprove?: boolean
+  autoApprove?: boolean;
   /**
    * How hard to try, 1 (faster) to 5 (smarter). Unset means 3.
    *
@@ -486,25 +501,34 @@ export interface Session {
    * may spend. Everything else — which model, which tools — is chosen
    * elsewhere and is not quietly rewritten by a slider.
    */
-  effort?: number
+  effort?: number;
   /**
    * The ids of the tool servers this session has switched on.
    *
    * Empty or absent means none, which is what every session is until somebody
    * chooses: what is not here is not in the prefix and is not paid for.
    */
-  mcp?: string[]
-  status: SessionStatus
-  createdAt: number
-  updatedAt: number
+  mcp?: string[];
+  /**
+   * What this conversation does when one of its turns ends.
+   *
+   * Absent means it has no opinion and follows the app-wide setting in
+   * Settings → Notifications, which is not the same as `all`. Set from the
+   * conversation's own menu, because that is where "this one may be loud" or
+   * "this one stays quiet" is being decided.
+   */
+  notify?: SessionNotify;
+  status: SessionStatus;
+  createdAt: number;
+  updatedAt: number;
   /** Accumulated token usage across all turns. */
-  usage: { input: number; output: number; cost: number }
+  usage: { input: number; output: number; cost: number };
   /**
    * Roughly what the next turn will resend — measured when the provider last
    * charged for it, estimated when the transcript has been tightened since.
    * Drives the context gauge.
    */
-  contextTokens?: number
+  contextTokens?: number;
   /**
    * How much of the *first* step of the last turn came out of the provider's
    * cache, 0 to 1.
@@ -517,7 +541,7 @@ export interface Session {
    * byte-for-byte alone: if the prefix is being served from cache, rewriting it
    * throws that away; if it is not, shrinking it is free.
    */
-  cacheShare?: number
+  cacheShare?: number;
   /**
    * What the last turn's request was actually made of, in tokens.
    *
@@ -535,14 +559,14 @@ export interface Session {
      * What the provider charged for the whole first step, which is the one
      * number here that is not an estimate.
      */
-    total: number
+    total: number;
     /** The model-facing transcript: messages, tool calls and their output. */
-    messages: number
+    messages: number;
     /** The agent's prompt and the rules, including whatever the switches added. */
-    system: number
+    system: number;
     /** Skills expanded into the message, when any were named. */
-    skills?: number
-  }
+    skills?: number;
+  };
   /**
    * What was typed while the turn was still running.
    *
@@ -551,62 +575,62 @@ export interface Session {
    * ends. They queue here instead, survive a restart, and go as the next turn
    * the moment this one stops.
    */
-  queuedFollowUps?: string[]
+  queuedFollowUps?: string[];
   /** Parent session when this was spawned by a `task` tool call. */
-  parentSessionId?: string
+  parentSessionId?: string;
   /** Short label for a subagent session, shown on its subchat. */
-  taskLabel?: string
-  archived?: boolean
+  taskLabel?: string;
+  archived?: boolean;
   /** Kept at the top of the list, above the grouping. */
-  pinned?: boolean
+  pinned?: boolean;
 
   /* ---- board placement. Absent on a session that is just a chat. ---- */
-  boardId?: string
-  columnId?: string
+  boardId?: string;
+  columnId?: string;
   /** Position within the column; lower is higher up. */
-  order?: number
+  order?: number;
   /** What to send when the scheduler starts a queued task. */
-  queuedPrompt?: string
+  queuedPrompt?: string;
   /** Why a human is needed, shown on the card while it sits in Blocked. */
-  blockedReason?: string
+  blockedReason?: string;
   /**
    * Set when this conversation works in a checkout of its own, cut from the
    * repository it was pointed at. `cwd` is that checkout while it is set.
    */
-  worktree?: WorktreeInfo
+  worktree?: WorktreeInfo;
   /**
    * For a session on a `container` environment: what it is allowed to reach, and
    * the record that a human authorised it. Absent until a target is declared,
    * and while it is absent the container has no network at all.
    */
-  sandbox?: SandboxScope
+  sandbox?: SandboxScope;
   /**
    * Other tasks judged to be working on the same thing. Set by the
    * coordinator, shown on the card, and named in the agent's prompt.
    */
-  relatedSessionIds?: string[]
+  relatedSessionIds?: string[];
   /**
    * Tasks this one is queued behind because they would edit the same files.
    * Cleared when it starts; it is why a card can sit in To do while a slot
    * is free.
    */
-  heldBy?: string[]
+  heldBy?: string[];
 }
 
 export interface ApprovalRequest {
-  id: string
-  sessionId: string
-  blockId: string
-  tool: string
-  title: string
-  detail: string
+  id: string;
+  sessionId: string;
+  blockId: string;
+  tool: string;
+  title: string;
+  detail: string;
   /** The agent's own description of what it is about to do, when it gave one. */
-  summary?: string
+  summary?: string;
   /** A diff preview for write/edit, the command for bash. */
-  preview?: string
-  environmentId: string
-  cwd: string
-  createdAt: number
+  preview?: string;
+  environmentId: string;
+  cwd: string;
+  createdAt: number;
 }
 
 /**
@@ -615,61 +639,70 @@ export interface ApprovalRequest {
  * the turn. Bound to the process, so a restart does not carry them over.
  */
 export interface BackgroundTask {
-  id: string
+  id: string;
   /** The session that started it — a subagent's own session, when delegated. */
-  sessionId: string
+  sessionId: string;
   /**
    * The chat this belongs to. A subagent runs in a child session, but its
    * background work is the parent conversation's work, so that is where it is
    * listed.
    */
-  rootSessionId: string
-  command: string
-  description: string
-  cwd: string
-  environmentId: string
-  agentId: string
-  status: 'running' | 'exited' | 'killed' | 'failed'
-  exitCode?: number
-  error?: string
-  startedAt: number
-  endedAt?: number
+  rootSessionId: string;
+  command: string;
+  description: string;
+  cwd: string;
+  environmentId: string;
+  agentId: string;
+  status: "running" | "exited" | "killed" | "failed";
+  exitCode?: number;
+  error?: string;
+  startedAt: number;
+  endedAt?: number;
   /** How much of the output the agent has already read. */
-  readOffset: number
-  output: string
+  readOffset: number;
+  output: string;
 }
 
 export interface FileEntry {
-  name: string
-  path: string
-  directory: boolean
-  size: number
-  modifiedAt: number
+  name: string;
+  path: string;
+  directory: boolean;
+  size: number;
+  modifiedAt: number;
 }
 
 /* ---------- Activity rail filtering ---------- */
 
-export type ActivityGroupBy = 'none' | 'folder' | 'status' | 'date' | 'environment' | 'agent' | 'tool' | 'session'
-export type ActivitySortBy = 'recent' | 'oldest' | 'duration' | 'status' | 'tool' | 'folder'
+export type ActivityGroupBy =
+  | "none"
+  | "folder"
+  | "status"
+  | "date"
+  | "environment"
+  | "agent"
+  | "tool"
+  | "session";
+export type ActivitySortBy =
+  "recent" | "oldest" | "duration" | "status" | "tool" | "folder";
 
 export interface ActivityQuery {
-  groupBy: ActivityGroupBy
-  sortBy: ActivitySortBy
-  search: string
-  statuses: BlockStatus[]
-  environments: string[]
-  agents: string[]
-  tools: string[]
-  sessionId: string | null
+  groupBy: ActivityGroupBy;
+  sortBy: ActivitySortBy;
+  search: string;
+  statuses: BlockStatus[];
+  environments: string[];
+  agents: string[];
+  tools: string[];
+  sessionId: string | null;
   /** Epoch ms lower bound. */
-  since: number | null
+  since: number | null;
 }
 
 /** A labelled bucket of rows, for the grouped lists. */
 export interface Group<T> {
-  key: string
-  label: string
-  items: T[]
+  key: string;
+  label: string;
+  items: T[];
 }
 
 /* ---------- Boards ---------- */
@@ -680,77 +713,80 @@ export interface Group<T> {
  * is waiting on a human. `backlog` and `review` are parked — nothing starts by
  * itself from there.
  */
-export type ColumnKind = 'backlog' | 'todo' | 'in-progress' | 'blocked' | 'review' | 'done'
+export type ColumnKind =
+  "backlog" | "todo" | "in-progress" | "blocked" | "review" | "done";
 
 export interface BoardColumn {
-  id: string
-  name: string
-  kind: ColumnKind
+  id: string;
+  name: string;
+  kind: ColumnKind;
   /** Warn past this many cards. Advisory: it never blocks a drag. */
-  wipLimit?: number
+  wipLimit?: number;
 }
 
 export interface Board {
-  id: string
-  name: string
+  id: string;
+  name: string;
   /** The workspace: a folder on an environment. Several boards may share one. */
-  cwd: string
-  environmentId: string
-  columns: BoardColumn[]
-  createdAt: number
-  updatedAt: number
-  archived?: boolean
+  cwd: string;
+  environmentId: string;
+  columns: BoardColumn[];
+  createdAt: number;
+  updatedAt: number;
+  archived?: boolean;
 }
 
 /* ---------- Session list filtering ---------- */
 
-export type SessionGroupBy = 'none' | 'folder' | 'status' | 'date' | 'environment' | 'agent'
-export type SessionSortBy = 'recent' | 'created' | 'title' | 'folder' | 'status'
+export type SessionGroupBy =
+  "none" | "folder" | "status" | "date" | "environment" | "agent";
+export type SessionSortBy =
+  "recent" | "created" | "title" | "folder" | "status";
 /** `active` is everything not archived — the sensible default, not a state. */
 export type SessionStatusFilter =
-  | 'active'
-  | 'all'
-  | 'running'
-  | 'queued'
-  | 'approval'
-  | 'error'
-  | 'idle'
-  | 'done'
+  | "active"
+  | "all"
+  | "running"
+  | "queued"
+  | "approval"
+  | "error"
+  | "idle"
+  | "done";
 
 export interface SessionQuery {
-  status: SessionStatusFilter
+  status: SessionStatusFilter;
   /** An environment id, or `all`. */
-  environment: string
-  groupBy: SessionGroupBy
-  sortBy: SessionSortBy
-  search: string
+  environment: string;
+  groupBy: SessionGroupBy;
+  sortBy: SessionSortBy;
+  search: string;
   /** Whether each row carries its repository's branch and dirty count. */
-  showGitStatus: boolean
+  showGitStatus: boolean;
 }
 
 export interface GitSummary {
-  isRepo: boolean
-  branch: string
-  dirty: number
+  isRepo: boolean;
+  branch: string;
+  dirty: number;
 }
 
 export interface ChangedFile {
-  path: string
+  path: string;
   /** Index + worktree status, e.g. "M", "A", "??". */
-  status: string
-  added: number
-  removed: number
-  staged: boolean
+  status: string;
+  added: number;
+  removed: number;
+  staged: boolean;
 }
 
 export interface RepoChanges {
-  isRepo: boolean
-  root: string
-  branch: string
-  upstream?: string
-  files: ChangedFile[]
-  added: number
-  removed: number
+  isRepo: boolean;
+  root: string;
+  branch: string;
+  upstream?: string;
+  files: ChangedFile[];
+  added: number;
+  removed: number;
 }
 
 /* ---------- IPC events ---------- */
@@ -763,38 +799,38 @@ export interface RepoChanges {
  * actually done" has something to be measured against.
  */
 export interface WorktreeInfo {
-  repoRoot: string
-  branch: string
-  base: string
-  createdAt: number
+  repoRoot: string;
+  branch: string;
+  base: string;
+  createdAt: number;
 }
 
 /** Whether a conversation could have a checkout of its own, and from what. */
 export interface WorktreeOffer {
-  eligible: boolean
+  eligible: boolean;
   /** The repository it would be cut from. */
-  repoRoot?: string
+  repoRoot?: string;
   /** What the branch would be called. */
-  branch?: string
+  branch?: string;
   /** Why not, in a sentence the interface can show. */
-  reason?: string
+  reason?: string;
 }
 
 export interface WorktreeStatus {
   /** Commits this branch has that its base did not. */
-  ahead: number
+  ahead: number;
   /** Files changed and not committed. */
-  dirty: number
+  dirty: number;
 }
 
 export interface WorktreeRemoval {
   /** Where the conversation should work now. */
-  cwd?: string
+  cwd?: string;
   /** True when work was committed to the branch on the way out. */
-  committed?: boolean
+  committed?: boolean;
   /** The branch that is still there, whatever happened to the checkout. */
-  branch?: string
-  error?: string
+  branch?: string;
+  error?: string;
 }
 
 /**
@@ -806,60 +842,82 @@ export interface WorktreeRemoval {
  * subject, with no file in common yet.
  */
 export interface Neighbour {
-  sessionId: string
-  title: string
-  status: SessionStatus
+  sessionId: string;
+  title: string;
+  status: SessionStatus;
   /** Working now, so it may write again while you read this. */
-  live: boolean
+  live: boolean;
   /** Files both conversations have changed. Empty for a guessed neighbour. */
-  shared: string[]
+  shared: string[];
   /** The coordinator's sentence, when a guess is what linked them. */
-  why?: string
+  why?: string;
 }
 
 export type AppEvent =
-  | { type: 'config.updated'; config: AppConfig }
-  | { type: 'session.created'; session: Session }
-  | { type: 'session.updated'; session: Session }
-  | { type: 'session.deleted'; sessionId: string }
+  | { type: "config.updated"; config: AppConfig }
+  | { type: "session.created"; session: Session }
+  | { type: "session.updated"; session: Session }
+  | { type: "session.deleted"; sessionId: string }
   /**
    * A session was cut back to an earlier point, so what the renderer holds for
    * it is wrong in a way no incremental event can express: messages and blocks
    * were removed. It refetches.
    */
-  | { type: 'session.rewound'; sessionId: string }
-  | { type: 'board.updated'; board: Board }
-  | { type: 'board.deleted'; boardId: string }
-  | { type: 'message.created'; message: Message }
-  | { type: 'message.updated'; message: Message }
-  | { type: 'message.part.delta'; messageId: string; sessionId: string; partIndex: number; text: string }
-  | { type: 'block.created'; block: Block }
-  | { type: 'block.updated'; block: Block }
-  | { type: 'block.output'; blockId: string; sessionId: string; chunk: string }
-  | { type: 'approval.requested'; request: ApprovalRequest }
-  | { type: 'approval.resolved'; approvalId: string }
-  | { type: 'environment.status'; environmentId: string; connected: boolean; message?: string }
-  | { type: 'background.updated'; task: BackgroundTask }
-  | { type: 'background.output'; taskId: string; sessionId: string; chunk: string }
-  | { type: 'background.cleared'; sessionId: string | null }
-  | { type: 'terminal.data'; terminalId: string; chunk: string }
-  | { type: 'terminal.exit'; terminalId: string; code: number }
-  | { type: 'toast'; level: 'info' | 'warn' | 'error'; message: string }
+  | { type: "session.rewound"; sessionId: string }
+  /**
+   * A notification for this conversation was clicked, so the window has to show
+   * it. Emission only — the notification itself is created in the main process,
+   * and this is how a native click becomes a selected session.
+   */
+  | { type: "session.focus"; sessionId: string }
+  | { type: "board.updated"; board: Board }
+  | { type: "board.deleted"; boardId: string }
+  | { type: "message.created"; message: Message }
+  | { type: "message.updated"; message: Message }
+  | {
+      type: "message.part.delta";
+      messageId: string;
+      sessionId: string;
+      partIndex: number;
+      text: string;
+    }
+  | { type: "block.created"; block: Block }
+  | { type: "block.updated"; block: Block }
+  | { type: "block.output"; blockId: string; sessionId: string; chunk: string }
+  | { type: "approval.requested"; request: ApprovalRequest }
+  | { type: "approval.resolved"; approvalId: string }
+  | {
+      type: "environment.status";
+      environmentId: string;
+      connected: boolean;
+      message?: string;
+    }
+  | { type: "background.updated"; task: BackgroundTask }
+  | {
+      type: "background.output";
+      taskId: string;
+      sessionId: string;
+      chunk: string;
+    }
+  | { type: "background.cleared"; sessionId: string | null }
+  | { type: "terminal.data"; terminalId: string; chunk: string }
+  | { type: "terminal.exit"; terminalId: string; code: number }
+  | { type: "toast"; level: "info" | "warn" | "error"; message: string }
   /**
    * The state of the model that runs on this machine: what is downloaded,
    * how far a download has got, and whether the server is up. A progress bar
    * cannot be polled into existence, and the install is minutes long.
    */
-  | { type: 'local.status'; status: LocalModelStatus }
+  | { type: "local.status"; status: LocalModelStatus }
   /**
    * The state of the pentesting sandbox: whether Docker is there, and how far a
    * build of the image has got. Like the local model, the build is minutes long
    * and a progress bar cannot be polled into existence.
    */
-  | { type: 'sandbox.status'; status: SandboxStatus }
+  | { type: "sandbox.status"; status: SandboxStatus }
   /**
    * A task claimed a file it had not claimed before, so who its neighbours are
    * may have changed. Carries no list: working out the neighbours reads the
    * working tree, and only the conversation on screen is worth that.
    */
-  | { type: 'claims.updated'; sessionId: string }
+  | { type: "claims.updated"; sessionId: string };

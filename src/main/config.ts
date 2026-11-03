@@ -1,16 +1,20 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 
 import type {
   AgentConfig,
   AppConfig,
   EnvironmentConfig,
   Permissions,
-  ProviderConfig
-} from '@shared/types'
-import { rememberSecret } from '@shared/errors'
-import { PROVIDER_PRESETS } from '@shared/catalog'
+  ProviderConfig,
+} from "@shared/types";
+import { rememberSecret } from "@shared/errors";
+import { PROVIDER_PRESETS } from "@shared/catalog";
+import {
+  DEFAULT_NOTIFICATIONS,
+  notificationSettings,
+} from "@shared/notifications";
 
 /**
  * Everything the app stores lives under one root, and the root is overridable.
@@ -21,11 +25,15 @@ import { PROVIDER_PRESETS } from '@shared/catalog'
  * finishes, which quietly replaced a real machine's providers and hosts with
  * the defaults every time it ran.
  */
-const ROOT = process.env.OPENDESKTOP_HOME
+const ROOT = process.env.OPENDESKTOP_HOME;
 
-export const CONFIG_DIR = ROOT ? join(ROOT, 'config') : join(homedir(), '.config', 'opendesktop')
-export const CONFIG_PATH = join(CONFIG_DIR, 'config.json')
-export const DATA_DIR = ROOT ? join(ROOT, 'data') : join(homedir(), '.local', 'share', 'opendesktop')
+export const CONFIG_DIR = ROOT
+  ? join(ROOT, "config")
+  : join(homedir(), ".config", "opendesktop");
+export const CONFIG_PATH = join(CONFIG_DIR, "config.json");
+export const DATA_DIR = ROOT
+  ? join(ROOT, "data")
+  : join(homedir(), ".local", "share", "opendesktop");
 
 /**
  * Removals nobody ever means, as patterns.
@@ -39,48 +47,55 @@ export const DATA_DIR = ROOT ? join(ROOT, 'data') : join(homedir(), '.local', 's
  * approval prompt is for.
  */
 const CATASTROPHIC = [
-  'rm -rf /',
+  "rm -rf /",
   // A single character after the slash: `/*` as the shell wrote it, and `/x`.
-  'rm -rf /?',
-  'rm -rf /Users*',
-  'rm -rf /System*',
-  'rm -rf /Library*',
-  'rm -rf /Applications*',
-  'rm -rf /etc*',
-  'rm -rf /usr*',
-  'rm -rf /var*',
-  'rm -rf /bin*',
-  'rm -rf /sbin*',
-  'rm -rf /opt*',
-  'rm -rf ~*',
-  'rm -rf $HOME*'
-]
+  "rm -rf /?",
+  "rm -rf /Users*",
+  "rm -rf /System*",
+  "rm -rf /Library*",
+  "rm -rf /Applications*",
+  "rm -rf /etc*",
+  "rm -rf /usr*",
+  "rm -rf /var*",
+  "rm -rf /bin*",
+  "rm -rf /sbin*",
+  "rm -rf /opt*",
+  "rm -rf ~*",
+  "rm -rf $HOME*",
+];
 
 const DEFAULT_PERMISSIONS: Permissions = {
-  bash: 'ask',
-  edit: 'ask',
-  write: 'ask',
-  read: 'allow',
-  fetch: 'ask',
-  mcp: 'ask',
+  bash: "ask",
+  edit: "ask",
+  write: "ask",
+  read: "allow",
+  fetch: "ask",
+  mcp: "ask",
   allowlist: [
-    'ls *',
-    'cat *',
-    'head *',
-    'tail *',
-    'pwd',
-    'git status*',
-    'git diff*',
-    'git log*',
-    'grep *',
-    'rg *',
-    'find *',
-    'wc *',
-    'which *',
-    'echo *'
+    "ls *",
+    "cat *",
+    "head *",
+    "tail *",
+    "pwd",
+    "git status*",
+    "git diff*",
+    "git log*",
+    "grep *",
+    "rg *",
+    "find *",
+    "wc *",
+    "which *",
+    "echo *",
   ],
-  denylist: [...CATASTROPHIC, ':(){*', 'mkfs*', 'dd if=*of=/dev/*', 'shutdown*', 'reboot*']
-}
+  denylist: [
+    ...CATASTROPHIC,
+    ":(){*",
+    "mkfs*",
+    "dd if=*of=/dev/*",
+    "shutdown*",
+    "reboot*",
+  ],
+};
 
 const DEFAULT_PROVIDERS: Record<string, ProviderConfig> = {
   /*
@@ -89,44 +104,46 @@ const DEFAULT_PROVIDERS: Record<string, ProviderConfig> = {
    * here and another there to drift apart.
    */
   anthropic: {
-    id: 'anthropic',
-    npm: '@ai-sdk/anthropic',
-    name: 'Anthropic',
-    options: { apiKey: '{secret:anthropic}' },
-    models: PROVIDER_PRESETS.find((preset) => preset.id === 'anthropic')?.models ?? {}
+    id: "anthropic",
+    npm: "@ai-sdk/anthropic",
+    name: "Anthropic",
+    options: { apiKey: "{secret:anthropic}" },
+    models:
+      PROVIDER_PRESETS.find((preset) => preset.id === "anthropic")?.models ??
+      {},
   },
   helmcode: {
-    id: 'helmcode',
-    npm: '@ai-sdk/openai-compatible',
-    name: 'Helmcode',
+    id: "helmcode",
+    npm: "@ai-sdk/openai-compatible",
+    name: "Helmcode",
     options: {
-      baseURL: 'https://api.helmcode.com/v1',
-      apiKey: '{env:HELMCODE_API_KEY}'
+      baseURL: "https://api.helmcode.com/v1",
+      apiKey: "{env:HELMCODE_API_KEY}",
     },
     models: {
-      'glm5.3-flash': {
-        id: 'glm5.3-flash',
-        name: 'GLM 5.3 Flash',
+      "glm5.3-flash": {
+        id: "glm5.3-flash",
+        name: "GLM 5.3 Flash",
         contextWindow: 200000,
         toolCall: true,
-        vision: true
-      }
-    }
-  }
-}
+        vision: true,
+      },
+    },
+  },
+};
 
 const DEFAULT_ENVIRONMENTS: Record<string, EnvironmentConfig> = {
-  local: { id: 'local', name: 'Local', kind: 'local', cwd: homedir() },
+  local: { id: "local", name: "Local", kind: "local", cwd: homedir() },
   // Seeded so the pentesting sandbox is there to pick without setup. It needs
   // Docker; when Docker is absent the environment still shows, and its status
   // says so, the same way the local model reports itself unsupported.
-  sandbox: { id: 'sandbox', name: 'Sandbox', kind: 'container', cwd: '/work' }
-}
+  sandbox: { id: "sandbox", name: "Sandbox", kind: "container", cwd: "/work" },
+};
 
 export function defaultConfig(): AppConfig {
   return {
-    $schema: 'https://opendesktop.dev/config.json',
-    model: 'helmcode/glm5.3-flash',
+    $schema: "https://opendesktop.dev/config.json",
+    model: "helmcode/glm5.3-flash",
     provider: DEFAULT_PROVIDERS,
     environment: DEFAULT_ENVIRONMENTS,
     agent: {},
@@ -146,33 +163,47 @@ export function defaultConfig(): AppConfig {
     dehydrateAfterTurns: 2,
     dehydrateOverChars: 800,
     smoothStreamMs: 10,
-    theme: 'dark'
-  }
+    theme: "dark",
+    /*
+     * Written out rather than left to `notificationSettings`: a fresh config
+     * is also the documentation of what can be set, and a feature nobody can
+     * find in the file is a feature nobody knows is off by choice.
+     */
+    notifications: { ...DEFAULT_NOTIFICATIONS },
+  };
 }
 
 /**
  * Reads a stored secret by name. Injected by the secrets module so that config
  * loading has no dependency on electron, which keeps it testable under plain node.
  */
-let secretResolver: (name: string) => string | undefined = () => undefined
+let secretResolver: (name: string) => string | undefined = () => undefined;
 
-export function setSecretResolver(fn: (name: string) => string | undefined): void {
-  secretResolver = fn
+export function setSecretResolver(
+  fn: (name: string) => string | undefined,
+): void {
+  secretResolver = fn;
 }
 
 /** Expands `{env:VAR}`, `{file:/path}` and `{secret:NAME}` placeholders. */
 export function expandPlaceholders(value: string): string {
   return value
-    .replace(/\{secret:([A-Za-z0-9_.-]+)\}/g, (_m, name: string) => secretResolver(name) ?? '')
-    .replace(/\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g, (_m, name: string) => process.env[name] ?? '')
+    .replace(
+      /\{secret:([A-Za-z0-9_.-]+)\}/g,
+      (_m, name: string) => secretResolver(name) ?? "",
+    )
+    .replace(
+      /\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g,
+      (_m, name: string) => process.env[name] ?? "",
+    )
     .replace(/\{file:([^}]+)\}/g, (_m, p: string) => {
-      const target = p.startsWith('~') ? join(homedir(), p.slice(1)) : p
+      const target = p.startsWith("~") ? join(homedir(), p.slice(1)) : p;
       try {
-        return readFileSync(target, 'utf8').trim()
+        return readFileSync(target, "utf8").trim();
       } catch {
-        return ''
+        return "";
       }
-    })
+    });
 }
 
 /**
@@ -182,21 +213,23 @@ export function expandPlaceholders(value: string): string {
  * and redacted later: the same key reaches a shell command's environment, and a
  * command's output is not somewhere a key can be predicted by shape.
  */
-const CREDENTIAL_KEY = /key|token|secret|password|passphrase|credential/i
+const CREDENTIAL_KEY = /key|token|secret|password|passphrase|credential/i;
 
 function expandDeep<T>(value: T, key?: string): T {
-  if (typeof value === 'string') {
-    const expanded = expandPlaceholders(value)
-    if (key && CREDENTIAL_KEY.test(key)) rememberSecret(expanded)
-    return expanded as unknown as T
+  if (typeof value === "string") {
+    const expanded = expandPlaceholders(value);
+    if (key && CREDENTIAL_KEY.test(key)) rememberSecret(expanded);
+    return expanded as unknown as T;
   }
-  if (Array.isArray(value)) return value.map((entry) => expandDeep(entry, key)) as unknown as T
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = expandDeep(v, k)
-    return out as T
+  if (Array.isArray(value))
+    return value.map((entry) => expandDeep(entry, key)) as unknown as T;
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>))
+      out[k] = expandDeep(v, k);
+    return out as T;
   }
-  return value
+  return value;
 }
 
 /**
@@ -208,13 +241,16 @@ function expandDeep<T>(value: T, key?: string): T {
  * one this fixes.
  */
 function upgradeDenylist(permissions: Permissions): Permissions {
-  const legacy = permissions.denylist.indexOf('rm -rf /*')
-  if (legacy === -1) return permissions
-  const rest = permissions.denylist.filter((entry) => entry !== 'rm -rf /*')
+  const legacy = permissions.denylist.indexOf("rm -rf /*");
+  if (legacy === -1) return permissions;
+  const rest = permissions.denylist.filter((entry) => entry !== "rm -rf /*");
   return {
     ...permissions,
-    denylist: [...CATASTROPHIC.filter((entry) => !rest.includes(entry)), ...rest]
-  }
+    denylist: [
+      ...CATASTROPHIC.filter((entry) => !rest.includes(entry)),
+      ...rest,
+    ],
+  };
 }
 
 /**
@@ -235,7 +271,7 @@ function upgradeDenylist(permissions: Permissions): Permissions {
  * Retired only when it is exactly this number, which means the app wrote it.
  * Anything else was typed by somebody who meant it, and is kept and logged.
  */
-const RETIRED_WALL_CLOCK_MS = 1_800_000
+const RETIRED_WALL_CLOCK_MS = 1_800_000;
 
 /*
  * Said out loud at startup rather than logged from here: `log.ts` reads
@@ -243,38 +279,38 @@ const RETIRED_WALL_CLOCK_MS = 1_800_000
  * Kept as a note for `index.ts` to print, which is the same trick the agent
  * loader uses a few lines down.
  */
-let wallClockNote_: string | null = null
+let wallClockNote_: string | null = null;
 
 /** What happened to `maxTurnMs` on the last load, if anything worth saying. */
 export function wallClockNote(): string | null {
-  return wallClockNote_
+  return wallClockNote_;
 }
 
 function wallClock(raw: Record<string, unknown>): number {
-  wallClockNote_ = null
-  const written = raw.maxTurnMs
-  if (typeof written !== 'number' || written <= 0) return 0
+  wallClockNote_ = null;
+  const written = raw.maxTurnMs;
+  if (typeof written !== "number" || written <= 0) return 0;
   if (written === RETIRED_WALL_CLOCK_MS) {
     wallClockNote_ =
       `retired the 30-minute wall clock this app used to write into ${CONFIG_PATH}; ` +
-      `turns now end on silence (maxQuietMs), not on the clock`
-    return 0
+      `turns now end on silence (maxQuietMs), not on the clock`;
+    return 0;
   }
   wallClockNote_ =
     `honouring maxTurnMs=${written}ms from ${CONFIG_PATH} — a hard wall on the clock, ` +
-    `set by hand and no longer shown in the interface`
-  return written
+    `set by hand and no longer shown in the interface`;
+  return written;
 }
 
 export function normalizeConfig(raw: Record<string, unknown>): AppConfig {
-  const base = defaultConfig()
+  const base = defaultConfig();
   const merged: AppConfig = {
     ...base,
     ...(raw as Partial<AppConfig>),
     maxTurnMs: wallClock(raw),
     permissions: upgradeDenylist({
       ...base.permissions,
-      ...((raw.permissions as Partial<Permissions>) ?? {})
+      ...((raw.permissions as Partial<Permissions>) ?? {}),
     }),
     // Only ever true when it says true: a config is hand-editable, and
     // "yes" or 1 must not be what turns the prompts off.
@@ -282,21 +318,33 @@ export function normalizeConfig(raw: Record<string, unknown>): AppConfig {
     // Only the two switches this app has, and only as booleans: a config is
     // hand-editable, and `"rtk": "yes"` should not switch anything on.
     savings: {
-      rtk: raw.savings ? (raw.savings as Record<string, unknown>).rtk === true : base.savings?.rtk,
+      rtk: raw.savings
+        ? (raw.savings as Record<string, unknown>).rtk === true
+        : base.savings?.rtk,
       shunt: raw.savings
         ? (raw.savings as Record<string, unknown>).shunt === true
-        : base.savings?.shunt
+        : base.savings?.shunt,
     },
+    /*
+     * The same rule as above, and the same reason: a notification is an
+     * interruption, so only a real `true` may cause one. `notificationSettings`
+     * is also what the process that shows them reads, so the shape here and the
+     * shape there cannot drift apart.
+     */
+    notifications: notificationSettings(
+      raw.notifications as Record<string, unknown> | undefined,
+    ),
     provider: {},
     environment: {},
-    agent: {}
-  }
+    agent: {},
+  };
 
-  const rawProviders = (raw.provider as Record<string, Partial<ProviderConfig>>) ?? base.provider
+  const rawProviders =
+    (raw.provider as Record<string, Partial<ProviderConfig>>) ?? base.provider;
   for (const [id, p] of Object.entries(rawProviders)) {
-    const models: Record<string, ProviderConfig['models'][string]> = {}
+    const models: Record<string, ProviderConfig["models"][string]> = {};
     for (const [mid, m] of Object.entries(p.models ?? {})) {
-      models[mid] = { ...m, id: mid, name: m?.name ?? mid }
+      models[mid] = { ...m, id: mid, name: m?.name ?? mid };
     }
     merged.provider[id] = {
       // Everything the config said, then the fields this shape guarantees.
@@ -306,86 +354,100 @@ export function normalizeConfig(raw: Record<string, unknown>): AppConfig {
       // that were supposed to share it with no limit at all.
       ...p,
       id,
-      npm: p.npm ?? '@ai-sdk/openai-compatible',
+      npm: p.npm ?? "@ai-sdk/openai-compatible",
       name: p.name ?? id,
       options: p.options ?? {},
-      models
-    }
+      models,
+    };
   }
 
-  const rawEnvs = (raw.environment as Record<string, Partial<EnvironmentConfig>>) ?? base.environment
+  const rawEnvs =
+    (raw.environment as Record<string, Partial<EnvironmentConfig>>) ??
+    base.environment;
   for (const [id, e] of Object.entries(rawEnvs)) {
     merged.environment[id] = {
       id,
       name: e.name ?? id,
       kind:
         e.kind ??
-        (e.workstation ? 'gcp-workstation' : e.ssh ? 'ssh' : e.container ? 'container' : 'local'),
+        (e.workstation
+          ? "gcp-workstation"
+          : e.ssh
+            ? "ssh"
+            : e.container
+              ? "container"
+              : "local"),
       cwd: e.cwd,
       ssh: e.ssh,
       workstation: e.workstation,
-      container: e.container
-    }
+      container: e.container,
+    };
   }
-  if (!merged.environment.local) merged.environment.local = DEFAULT_ENVIRONMENTS.local
-  if (!merged.environment.sandbox) merged.environment.sandbox = DEFAULT_ENVIRONMENTS.sandbox
+  if (!merged.environment.local)
+    merged.environment.local = DEFAULT_ENVIRONMENTS.local;
+  if (!merged.environment.sandbox)
+    merged.environment.sandbox = DEFAULT_ENVIRONMENTS.sandbox;
 
   // Agents are files on disk now, not part of this document. The loader fills
   // them in; normalizeConfig is also used by tests with no agent directory, so
   // a caller-supplied set is still honoured.
-  const rawAgents = (raw.agent as Record<string, Partial<AgentConfig>> | undefined) ?? {}
+  const rawAgents =
+    (raw.agent as Record<string, Partial<AgentConfig>> | undefined) ?? {};
   for (const [id, a] of Object.entries(rawAgents)) {
     merged.agent[id] = {
       id,
       name: a.name ?? id,
-      description: a.description ?? '',
-      mode: a.mode ?? 'all',
+      description: a.description ?? "",
+      mode: a.mode ?? "all",
       model: a.model,
       prompt: a.prompt,
       temperature: a.temperature,
       tools: a.tools,
       permissions: a.permissions,
-      color: a.color
-    }
+      color: a.color,
+    };
   }
 
-  return merged
+  return merged;
 }
 
 /** Injected by the agent store so config loading keeps no import cycle. */
-let agentLoader: (() => Record<string, AgentConfig>) | null = null
+let agentLoader: (() => Record<string, AgentConfig>) | null = null;
 
 export function setAgentLoader(fn: () => Record<string, AgentConfig>): void {
-  agentLoader = fn
+  agentLoader = fn;
 }
 
-let cached: AppConfig | null = null
+let cached: AppConfig | null = null;
 
 export function loadConfig(force = false): AppConfig {
-  if (cached && !force) return cached
+  if (cached && !force) return cached;
   if (!existsSync(CONFIG_PATH)) {
-    mkdirSync(dirname(CONFIG_PATH), { recursive: true })
-    const fresh = defaultConfig()
+    mkdirSync(dirname(CONFIG_PATH), { recursive: true });
+    const fresh = defaultConfig();
     // Written the same way saveConfig writes it: agents live in their own
     // files, so the document must not carry an `agent` key even an empty one.
-    const { agent: _agent, ...document } = fresh
-    writeFileSync(CONFIG_PATH, JSON.stringify(document, null, 2), 'utf8')
-    cached = fresh
+    const { agent: _agent, ...document } = fresh;
+    writeFileSync(CONFIG_PATH, JSON.stringify(document, null, 2), "utf8");
+    cached = fresh;
     // ...and the agents still have to be merged in. Returning early without
     // this gave the first load of a fresh install no agents at all, which is
     // the roster the manager is told it can delegate to.
-    if (agentLoader) cached.agent = agentLoader()
-    return cached
+    if (agentLoader) cached.agent = agentLoader();
+    return cached;
   }
   try {
-    const raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf8')) as Record<string, unknown>
-    cached = normalizeConfig(raw)
+    const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    cached = normalizeConfig(raw);
   } catch (err) {
-    cached = defaultConfig()
-    cached.$schema = `invalid config at ${CONFIG_PATH}: ${(err as Error).message}`
+    cached = defaultConfig();
+    cached.$schema = `invalid config at ${CONFIG_PATH}: ${(err as Error).message}`;
   }
-  if (agentLoader) cached.agent = agentLoader()
-  return cached
+  if (agentLoader) cached.agent = agentLoader();
+  return cached;
 }
 
 /**
@@ -398,45 +460,58 @@ export function loadConfig(force = false): AppConfig {
  * prompt had the real key substituted in and could simply print it.
  */
 export function resolvedConfig(): AppConfig {
-  const config = loadConfig()
+  const config = loadConfig();
   return {
     ...config,
     provider: expandDeep(config.provider),
-    environment: expandDeep(config.environment)
-  }
+    environment: expandDeep(config.environment),
+    /*
+     * A tool server needs a credential too, and it is the one thing that must
+     * not land in the config file: a server is declared in a document people
+     * read and commit, so its token belongs in the environment or the keychain.
+     * Expanded here rather than at spawn so the settings page's "connect" and a
+     * turn hand the server the same thing — and so the value is registered for
+     * redaction, because anything a server answers with can come back through a
+     * tool's output.
+     */
+    mcp: expandDeep(config.mcp),
+  };
 }
 
 /** The config as written on disk, placeholders intact. Safe for the renderer. */
 export function rawConfig(): AppConfig {
-  return loadConfig()
+  return loadConfig();
 }
 
 export function saveConfig(next: AppConfig): AppConfig {
-  mkdirSync(dirname(CONFIG_PATH), { recursive: true })
+  mkdirSync(dirname(CONFIG_PATH), { recursive: true });
   // Agents are not written here; they have their own files.
-  const { agent: _agent, ...document } = next
-  writeFileSync(CONFIG_PATH, JSON.stringify(document, null, 2), 'utf8')
-  cached = normalizeConfig(document as unknown as Record<string, unknown>)
-  if (agentLoader) cached.agent = agentLoader()
-  return cached
+  const { agent: _agent, ...document } = next;
+  writeFileSync(CONFIG_PATH, JSON.stringify(document, null, 2), "utf8");
+  cached = normalizeConfig(document as unknown as Record<string, unknown>);
+  if (agentLoader) cached.agent = agentLoader();
+  return cached;
 }
 
 export function readConfigText(): string {
-  loadConfig()
-  return readFileSync(CONFIG_PATH, 'utf8')
+  loadConfig();
+  return readFileSync(CONFIG_PATH, "utf8");
 }
 
 export function writeConfigText(text: string): AppConfig {
-  const parsed = JSON.parse(text) as Record<string, unknown>
-  const normalized = normalizeConfig(parsed)
-  mkdirSync(dirname(CONFIG_PATH), { recursive: true })
-  writeFileSync(CONFIG_PATH, text, 'utf8')
-  cached = normalized
-  if (agentLoader) cached.agent = agentLoader()
-  return cached
+  const parsed = JSON.parse(text) as Record<string, unknown>;
+  const normalized = normalizeConfig(parsed);
+  mkdirSync(dirname(CONFIG_PATH), { recursive: true });
+  writeFileSync(CONFIG_PATH, text, "utf8");
+  cached = normalized;
+  if (agentLoader) cached.agent = agentLoader();
+  return cached;
 }
 
-export function effectivePermissions(config: AppConfig, agentId: string): Permissions {
-  const agent = config.agent[agentId]
-  return { ...config.permissions, ...(agent?.permissions ?? {}) }
+export function effectivePermissions(
+  config: AppConfig,
+  agentId: string,
+): Permissions {
+  const agent = config.agent[agentId];
+  return { ...config.permissions, ...(agent?.permissions ?? {}) };
 }

@@ -1,6 +1,7 @@
-import clsx from 'clsx'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import clsx from "clsx";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  BellRing,
   Bot,
   Boxes,
   Route,
@@ -11,143 +12,178 @@ import {
   Plug,
   Server,
   Sparkles,
-  Webhook
-} from 'lucide-react'
-import { useStore } from '../state/store'
-import { ModelsTab } from './ModelsTab'
-import { RoutingTab } from './RoutingTab'
-import { EnvironmentsTab } from './EnvironmentsTab'
-import { AgentsTab } from './AgentsTab'
-import { SkillsTab } from './SkillsTab'
-import { ToolServersTab } from './ToolServersTab'
-import { HooksTab } from './HooksTab'
-import { Hint, IconButton, Row, Section, Toggle } from './settings-ui'
+  Webhook,
+} from "lucide-react";
+import { useStore } from "../state/store";
+import { ModelsTab } from "./ModelsTab";
+import { RoutingTab } from "./RoutingTab";
+import { EnvironmentsTab } from "./EnvironmentsTab";
+import { AgentsTab } from "./AgentsTab";
+import { SkillsTab } from "./SkillsTab";
+import { ToolServersTab } from "./ToolServersTab";
+import { HooksTab } from "./HooksTab";
+import { NotificationsTab } from "./NotificationsTab";
+import { Hint, IconButton, Row, Section, Toggle } from "./settings-ui";
 
-type Page = 'providers' | 'routing' | 'agents' | 'skills' | 'tools' | 'hooks' | 'environments' | 'config'
+type Page =
+  | "providers"
+  | "routing"
+  | "agents"
+  | "skills"
+  | "tools"
+  | "notifications"
+  | "hooks"
+  | "environments"
+  | "config";
 
 interface NavItem {
-  id: Page
-  label: string
-  icon: ReactNode
+  id: Page;
+  label: string;
+  icon: ReactNode;
   /** Matched by the search box alongside the label. */
-  keywords: string
+  keywords: string;
 }
 
 const GROUPS: { title: string; items: NavItem[] }[] = [
   {
-    title: 'Settings',
+    title: "Settings",
     items: [
       {
-        id: 'providers',
-        label: 'Providers & keys',
+        id: "providers",
+        label: "Providers & keys",
         icon: <Boxes className="h-4 w-4" />,
         keywords:
-          'provider api key endpoint openai anthropic claude chatgpt gemini helmcode model price vision allowance limit'
+          "provider api key endpoint openai anthropic claude chatgpt gemini helmcode model price vision allowance limit",
       },
       {
-        id: 'routing',
-        label: 'Routing & limits',
+        id: "routing",
+        label: "Routing & limits",
         icon: <Route className="h-4 w-4" />,
         keywords:
-          'default model tasks subagents turn ceiling budget savings rtk shunt delegate planner context summarise compact'
+          "default model tasks subagents turn ceiling budget savings rtk shunt delegate planner context summarise compact",
       },
       {
-        id: 'agents',
-        label: 'Agents',
+        id: "agents",
+        label: "Agents",
         icon: <Bot className="h-4 w-4" />,
-        keywords: 'subagent manager specialist prompt permissions tools'
+        keywords: "subagent manager specialist prompt permissions tools",
       },
       {
-        id: 'skills',
-        label: 'Skills',
+        id: "skills",
+        label: "Skills",
         icon: <Sparkles className="h-4 w-4" />,
-        keywords: 'slash command import claude'
+        keywords: "slash command import claude",
       },
       {
-        id: 'tools',
-        label: 'Tool servers',
+        id: "tools",
+        label: "Tool servers",
         icon: <Plug className="h-4 w-4" />,
-        keywords: 'mcp server tool external stdio command connector schema tokens'
+        keywords:
+          "mcp server tool external stdio command connector schema tokens",
       },
       {
-        id: 'hooks',
-        label: 'Hooks',
+        id: "notifications",
+        label: "Notifications",
+        icon: <BellRing className="h-4 w-4" />,
+        keywords:
+          "notify notification alert banner sound mute silence background focus desktop turn finished done",
+      },
+      {
+        id: "hooks",
+        label: "Hooks",
         icon: <Webhook className="h-4 w-4" />,
-        keywords: 'hook format lint stage git notify refuse guard after before turn'
-      }
-    ]
+        keywords:
+          "hook format lint stage git notify refuse guard after before turn",
+      },
+    ],
   },
   {
-    title: 'Execution',
+    title: "Execution",
     items: [
       {
-        id: 'environments',
-        label: 'Remote hosts',
+        id: "environments",
+        label: "Remote hosts",
         icon: <Server className="h-4 w-4" />,
-        keywords: 'ssh gcp workstation tunnel local cwd folder'
-      }
-    ]
+        keywords: "ssh gcp workstation tunnel local cwd folder",
+      },
+    ],
   },
   {
-    title: 'Advanced',
+    title: "Advanced",
     items: [
       {
-        id: 'config',
-        label: 'Config file',
+        id: "config",
+        label: "Config file",
         icon: <FileJson2 className="h-4 w-4" />,
-        keywords: 'json raw edit secrets placeholder env file'
-      }
-    ]
-  }
-]
+        keywords: "json raw edit secrets placeholder env file",
+      },
+    ],
+  },
+];
 
 function ConfigEditor(): ReactNode {
-  const [text, setText] = useState('')
-  const [original, setOriginal] = useState('')
-  const [path, setPath] = useState('')
-  const [status, setStatus] = useState<{ kind: 'ok' | 'error'; message: string } | null>(null)
-  const refreshConfig = useStore((s) => s.refreshConfig)
+  const [text, setText] = useState("");
+  const [original, setOriginal] = useState("");
+  const [path, setPath] = useState("");
+  const [status, setStatus] = useState<{
+    kind: "ok" | "error";
+    message: string;
+  } | null>(null);
+  const refreshConfig = useStore((s) => s.refreshConfig);
 
   useEffect(() => {
     void window.opendesktop.config.getText().then((value) => {
-      setText(value)
-      setOriginal(value)
-    })
-    void window.opendesktop.config.path().then(setPath)
-  }, [])
+      setText(value);
+      setOriginal(value);
+    });
+    void window.opendesktop.config.path().then(setPath);
+  }, []);
 
   const save = async (): Promise<void> => {
     try {
-      JSON.parse(text)
+      JSON.parse(text);
     } catch (err) {
-      setStatus({ kind: 'error', message: `Invalid JSON: ${(err as Error).message}` })
-      return
+      setStatus({
+        kind: "error",
+        message: `Invalid JSON: ${(err as Error).message}`,
+      });
+      return;
     }
     try {
-      await window.opendesktop.config.setText(text)
-      await refreshConfig()
-      setOriginal(text)
-      setStatus({ kind: 'ok', message: 'Saved. Providers and connections were reloaded.' })
+      await window.opendesktop.config.setText(text);
+      await refreshConfig();
+      setOriginal(text);
+      setStatus({
+        kind: "ok",
+        message: "Saved. Providers and connections were reloaded.",
+      });
     } catch (err) {
-      setStatus({ kind: 'error', message: (err as Error).message })
+      setStatus({ kind: "error", message: (err as Error).message });
     }
-  }
+  };
 
   return (
     <Section
       title="Config file"
       description={
         <>
-          Everything the app knows, as JSON. Secrets stay as placeholders —{' '}
-          <span className="font-mono">{'{env:MY_VAR}'}</span> or{' '}
-          <span className="font-mono">{'{secret:name}'}</span> — resolved when a call is made and
-          never written here.
+          Everything the app knows, as JSON. Secrets stay as placeholders —{" "}
+          <span className="font-mono">{"{env:MY_VAR}"}</span> or{" "}
+          <span className="font-mono">{"{secret:name}"}</span> — resolved when a
+          call is made and never written here.
         </>
       }
       action={
         <>
-          {status ? <Hint tone={status.kind === 'ok' ? 'ok' : 'bad'}>{status.message}</Hint> : null}
-          <IconButton title="Reveal in Finder" onClick={() => void window.opendesktop.config.reveal()}>
+          {status ? (
+            <Hint tone={status.kind === "ok" ? "ok" : "bad"}>
+              {status.message}
+            </Hint>
+          ) : null}
+          <IconButton
+            title="Reveal in Finder"
+            onClick={() => void window.opendesktop.config.reveal()}
+          >
             <FolderOpen className="h-4 w-4" />
           </IconButton>
           <IconButton
@@ -171,7 +207,7 @@ function ConfigEditor(): ReactNode {
         />
       </Row>
     </Section>
-  )
+  );
 }
 
 /**
@@ -182,9 +218,9 @@ function ConfigEditor(): ReactNode {
  * works this way every day does not have to turn it on every time.
  */
 function Approvals(): ReactNode {
-  const config = useStore((s) => s.config)
-  const refreshConfig = useStore((s) => s.refreshConfig)
-  if (!config) return null
+  const config = useStore((s) => s.config);
+  const refreshConfig = useStore((s) => s.refreshConfig);
+  if (!config) return null;
 
   return (
     <Section
@@ -200,12 +236,12 @@ function Approvals(): ReactNode {
           onChange={(next) => {
             void window.opendesktop.config
               .save({ ...config, autoApprove: next })
-              .then(() => refreshConfig())
+              .then(() => refreshConfig());
           }}
         />
       </Row>
     </Section>
-  )
+  );
 }
 
 /**
@@ -216,41 +252,47 @@ function Approvals(): ReactNode {
  * something breaks is the file that says what broke.
  */
 function LogFile(): ReactNode {
-  const [path, setPath] = useState('')
+  const [path, setPath] = useState("");
   useEffect(() => {
-    void window.opendesktop.host.logPath().then((value) => setPath(value ?? ''))
-  }, [])
+    void window.opendesktop.host
+      .logPath()
+      .then((value) => setPath(value ?? ""));
+  }, []);
 
   return (
     <Section
       title="Log"
       description="Failures, with the whole cause chain, and what a turn had spent when it broke. Appended to, rotated once at 2MB, and never containing anything shaped like a key."
       action={
-        <IconButton title="Reveal in Finder" onClick={() => void window.opendesktop.host.revealLog()}>
+        <IconButton
+          title="Reveal in Finder"
+          onClick={() => void window.opendesktop.host.revealLog()}
+        >
           <FolderOpen className="h-4 w-4" />
         </IconButton>
       }
     >
       <Row label={<span className="font-mono text-[12px]">{path}</span>} />
     </Section>
-  )
+  );
 }
 
 export function SettingsPane(): ReactNode {
-  const [page, setPage] = useState<Page>('providers')
-  const [search, setSearch] = useState('')
+  const [page, setPage] = useState<Page>("providers");
+  const [search, setSearch] = useState("");
 
   const groups = useMemo(() => {
-    const needle = search.trim().toLowerCase()
-    if (!needle) return GROUPS
+    const needle = search.trim().toLowerCase();
+    if (!needle) return GROUPS;
     return GROUPS.map((group) => ({
       ...group,
       items: group.items.filter(
         (item) =>
-          item.label.toLowerCase().includes(needle) || item.keywords.includes(needle)
-      )
-    })).filter((group) => group.items.length > 0)
-  }, [search])
+          item.label.toLowerCase().includes(needle) ||
+          item.keywords.includes(needle),
+      ),
+    })).filter((group) => group.items.length > 0);
+  }, [search]);
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -267,17 +309,19 @@ export function SettingsPane(): ReactNode {
 
         {groups.map((group) => (
           <div key={group.title} className="mb-4">
-            <div className="text-ink-600 px-2 pb-1.5 text-[11px]">{group.title}</div>
+            <div className="text-ink-600 px-2 pb-1.5 text-[11px]">
+              {group.title}
+            </div>
             {group.items.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setPage(item.id)}
                 className={clsx(
-                  'mb-[2px] flex w-full items-center gap-2.5 rounded-lg px-2 py-[7px] text-[13.5px] transition-colors',
+                  "mb-[2px] flex w-full items-center gap-2.5 rounded-lg px-2 py-[7px] text-[13.5px] transition-colors",
                   page === item.id
-                    ? 'bg-ink-800 text-ink-100'
-                    : 'text-ink-400 hover:bg-ink-850 hover:text-ink-100'
+                    ? "bg-ink-800 text-ink-100"
+                    : "text-ink-400 hover:bg-ink-850 hover:text-ink-100",
                 )}
               >
                 {item.icon}
@@ -288,28 +332,31 @@ export function SettingsPane(): ReactNode {
         ))}
 
         {groups.length === 0 ? (
-          <div className="text-ink-600 px-2 text-[12px]">Nothing matches “{search}”.</div>
+          <div className="text-ink-600 px-2 text-[12px]">
+            Nothing matches “{search}”.
+          </div>
         ) : null}
       </nav>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
         <div className="mx-auto max-w-[760px]">
-          {page === 'config' ? (
+          {page === "config" ? (
             <>
               <Approvals />
               <ConfigEditor />
               <LogFile />
             </>
           ) : null}
-          {page === 'agents' ? <AgentsTab /> : null}
-          {page === 'skills' ? <SkillsTab /> : null}
-          {page === 'tools' ? <ToolServersTab /> : null}
-          {page === 'hooks' ? <HooksTab /> : null}
-          {page === 'environments' ? <EnvironmentsTab /> : null}
-          {page === 'providers' ? <ModelsTab /> : null}
-          {page === 'routing' ? <RoutingTab /> : null}
+          {page === "agents" ? <AgentsTab /> : null}
+          {page === "skills" ? <SkillsTab /> : null}
+          {page === "tools" ? <ToolServersTab /> : null}
+          {page === "notifications" ? <NotificationsTab /> : null}
+          {page === "hooks" ? <HooksTab /> : null}
+          {page === "environments" ? <EnvironmentsTab /> : null}
+          {page === "providers" ? <ModelsTab /> : null}
+          {page === "routing" ? <RoutingTab /> : null}
         </div>
       </div>
     </div>
-  )
+  );
 }

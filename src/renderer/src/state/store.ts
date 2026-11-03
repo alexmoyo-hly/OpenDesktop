@@ -1,5 +1,5 @@
-import { create } from 'zustand'
-import { previewTarget } from '../lib/preview'
+import { create } from "zustand";
+import { previewTarget } from "../lib/preview";
 import type {
   ActivityQuery,
   AppConfig,
@@ -14,22 +14,22 @@ import type {
   RepoChanges,
   Session,
   SessionQuery,
-  Skill
-} from '@shared/types'
-import { MANAGER_AGENT } from '@shared/types'
+  Skill,
+} from "@shared/types";
+import { MANAGER_AGENT } from "@shared/types";
 
 /** What the right-hand dock is showing. The centre column is always the chat. */
 export type DockTab =
-  | 'changes'
-  | 'terminal'
-  | 'browser'
-  | 'editor'
-  | 'files'
-  | 'activity'
-  | 'background'
+  | "changes"
+  | "terminal"
+  | "browser"
+  | "editor"
+  | "files"
+  | "activity"
+  | "background";
 
 /** The two ways of working: one conversation at a time, or the whole board. */
-export type AppView = 'chat' | 'board'
+export type AppView = "chat" | "board";
 
 // Declared in @shared/types, beside ActivityQuery, so the headless tests can
 // reach the list logic without pulling the renderer's DOM types in.
@@ -38,137 +38,154 @@ export type {
   SessionGroupBy,
   SessionQuery,
   SessionSortBy,
-  SessionStatusFilter
-} from '@shared/types'
+  SessionStatusFilter,
+} from "@shared/types";
 
 interface Toast {
-  id: number
-  level: 'info' | 'warn' | 'error'
-  message: string
+  id: number;
+  level: "info" | "warn" | "error";
+  message: string;
 }
 
 interface State {
-  ready: boolean
-  config: AppConfig | null
-  models: { ref: string; label: string; provider: string }[]
-  skills: Skill[]
-  keyStatus: Record<string, { resolved: boolean; source: string }>
-  secrets: { available: boolean; path: string; failed: string[]; hints: Record<string, string | null> }
+  ready: boolean;
+  config: AppConfig | null;
+  models: { ref: string; label: string; provider: string }[];
+  skills: Skill[];
+  keyStatus: Record<string, { resolved: boolean; source: string }>;
+  secrets: {
+    available: boolean;
+    path: string;
+    failed: string[];
+    hints: Record<string, string | null>;
+  };
 
-  sessions: Session[]
-  activeSessionId: string | null
-  messages: Record<string, Message[]>
-  blocks: Record<string, Block>
-  activity: Block[]
-  approvals: ApprovalRequest[]
-  backgroundTasks: BackgroundTask[]
-  envStatus: Record<string, { connected: boolean; message?: string }>
-  toasts: Toast[]
+  sessions: Session[];
+  activeSessionId: string | null;
+  messages: Record<string, Message[]>;
+  blocks: Record<string, Block>;
+  activity: Block[];
+  approvals: ApprovalRequest[];
+  backgroundTasks: BackgroundTask[];
+  envStatus: Record<string, { connected: boolean; message?: string }>;
+  toasts: Toast[];
 
-  dock: { open: boolean; tab: DockTab; width: number }
-  sidebarCollapsed: boolean
-  settingsOpen: boolean
+  dock: { open: boolean; tab: DockTab; width: number };
+  sidebarCollapsed: boolean;
+  settingsOpen: boolean;
   /**
    * The folder picker, when it is open, and which of its two halves to open
    * in. Held here rather than in the composer so that ⌘R can open it from
    * anywhere in the chat.
    */
-  folderPicker: { sessionId: string; mode: 'browse' | 'search' } | null
+  folderPicker: { sessionId: string; mode: "browse" | "search" } | null;
   /**
    * Text and attachments waiting to be put back into a composer, from a
    * rewind. Held here because the composer owns what is typed in it and there
    * is no other way to hand it something from outside.
    */
-  draft: { sessionId: string; text: string; attachments: Attachment[] } | null
-  changes: RepoChanges | null
-  changesLoading: boolean
+  draft: { sessionId: string; text: string; attachments: Attachment[] } | null;
+  changes: RepoChanges | null;
+  changesLoading: boolean;
   /** Keyed by `environmentId:cwd`, so sessions sharing a folder share a lookup. */
-  gitSummaries: Record<string, GitSummary>
-  sessionQuery: SessionQuery
-  activityQuery: ActivityQuery
+  gitSummaries: Record<string, GitSummary>;
+  sessionQuery: SessionQuery;
+  activityQuery: ActivityQuery;
   /** Where conversations' own folders live, read once at startup. */
-  workspacesRoot: string
+  workspacesRoot: string;
   /** The file the editor pane has open, if any. */
-  editorFile: { environmentId: string; path: string; sessionId?: string } | null
-  browserUrl: string
+  editorFile: {
+    environmentId: string;
+    path: string;
+    sessionId?: string;
+  } | null;
+  browserUrl: string;
   /**
    * Whether the browser pane shows its address bar. Null is "decide from what
    * is loaded": a file does not need one, a website does.
    */
-  browserChrome: boolean | null
-  view: AppView
-  boards: Board[]
+  browserChrome: boolean | null;
+  view: AppView;
+  boards: Board[];
   /** The card open as a chat beside the board. */
-  boardTaskId: string | null
+  boardTaskId: string | null;
   /** The row whose title is being edited in place, from the session menu. */
-  renamingSessionId: string | null
+  renamingSessionId: string | null;
   /** The session filter box, toggled from the window bar it does not live in. */
-  searchOpen: boolean
+  searchOpen: boolean;
   /**
    * Text handed to the terminal pane from somewhere else — a code block's run
    * button. The counter is what makes sending the same command twice register
    * as two events rather than as no change at all.
    */
-  terminalInject: { text: string; run: boolean; nonce: number } | null
+  terminalInject: { text: string; run: boolean; nonce: number } | null;
   /** Null means the overview: every card from every board. */
-  activeBoardId: string | null
+  activeBoardId: string | null;
   /** Block ids expanded in the transcript. */
-  expanded: Record<string, boolean>
-  activityCollapsed: boolean
+  expanded: Record<string, boolean>;
+  activityCollapsed: boolean;
 
-  bootstrap: () => Promise<void>
-  applyEvent: (event: AppEvent) => void
-  selectSession: (id: string) => Promise<void>
+  bootstrap: () => Promise<void>;
+  applyEvent: (event: AppEvent) => void;
+  selectSession: (id: string) => Promise<void>;
   newSession: (input?: {
-    cwd?: string
-    environmentId?: string
-    agentId?: string
-    model?: string
-  }) => Promise<void>
-  send: (text: string, attachments?: Attachment[]) => Promise<void>
-  stop: () => Promise<void>
-  openDock: (tab: DockTab) => void
-  toggleDock: (tab: DockTab) => void
-  closeDock: () => void
-  setDockWidth: (width: number) => void
-  toggleSidebar: () => void
-  setSettingsOpen: (open: boolean) => void
-  openFolderPicker: (sessionId: string, mode?: 'browse' | 'search') => void
-  closeFolderPicker: () => void
-  setDraft: (draft: { sessionId: string; text: string; attachments: Attachment[] } | null) => void
-  rewindTo: (sessionId: string, messageId: string) => Promise<void>
-  forkFrom: (sessionId: string, messageId: string) => Promise<void>
-  refreshChanges: () => Promise<void>
-  setSessionQuery: (patch: Partial<SessionQuery>) => void
-  setView: (view: AppView) => void
-  selectBoard: (id: string | null) => void
-  closeTask: () => void
-  startRename: (id: string | null) => void
-  toggleSearch: () => void
-  sendToTerminal: (text: string, run: boolean) => void
-  consumeTerminalInject: () => void
-  refreshBoards: () => Promise<void>
-  openTask: (sessionId: string) => Promise<void>
-  setActivityQuery: (patch: Partial<ActivityQuery>) => void
-  setBrowserUrl: (url: string) => void
-  setBrowserChrome: (show: boolean | null) => void
-  openInEditor: (file: { environmentId: string; path: string; sessionId?: string } | null) => void
-  toggleBlock: (id: string) => void
-  setExpanded: (id: string, value: boolean) => void
-  toggleActivity: () => void
-  refreshActivity: () => Promise<void>
-  refreshConfig: () => Promise<void>
-  refreshSecrets: () => Promise<void>
-  refreshSkills: () => Promise<void>
-  refreshBackgroundTasks: () => Promise<void>
-  refreshGitSummaries: () => Promise<void>
-  pushToast: (level: Toast['level'], message: string) => void
-  dismissToast: (id: number) => void
+    cwd?: string;
+    environmentId?: string;
+    agentId?: string;
+    model?: string;
+  }) => Promise<void>;
+  send: (text: string, attachments?: Attachment[]) => Promise<void>;
+  stop: () => Promise<void>;
+  openDock: (tab: DockTab) => void;
+  toggleDock: (tab: DockTab) => void;
+  closeDock: () => void;
+  setDockWidth: (width: number) => void;
+  toggleSidebar: () => void;
+  setSettingsOpen: (open: boolean) => void;
+  openFolderPicker: (sessionId: string, mode?: "browse" | "search") => void;
+  closeFolderPicker: () => void;
+  setDraft: (
+    draft: {
+      sessionId: string;
+      text: string;
+      attachments: Attachment[];
+    } | null,
+  ) => void;
+  rewindTo: (sessionId: string, messageId: string) => Promise<void>;
+  forkFrom: (sessionId: string, messageId: string) => Promise<void>;
+  refreshChanges: () => Promise<void>;
+  setSessionQuery: (patch: Partial<SessionQuery>) => void;
+  setView: (view: AppView) => void;
+  selectBoard: (id: string | null) => void;
+  closeTask: () => void;
+  startRename: (id: string | null) => void;
+  toggleSearch: () => void;
+  sendToTerminal: (text: string, run: boolean) => void;
+  consumeTerminalInject: () => void;
+  refreshBoards: () => Promise<void>;
+  openTask: (sessionId: string) => Promise<void>;
+  setActivityQuery: (patch: Partial<ActivityQuery>) => void;
+  setBrowserUrl: (url: string) => void;
+  setBrowserChrome: (show: boolean | null) => void;
+  openInEditor: (
+    file: { environmentId: string; path: string; sessionId?: string } | null,
+  ) => void;
+  toggleBlock: (id: string) => void;
+  setExpanded: (id: string, value: boolean) => void;
+  toggleActivity: () => void;
+  refreshActivity: () => Promise<void>;
+  refreshConfig: () => Promise<void>;
+  refreshSecrets: () => Promise<void>;
+  refreshSkills: () => Promise<void>;
+  refreshBackgroundTasks: () => Promise<void>;
+  refreshGitSummaries: () => Promise<void>;
+  pushToast: (level: Toast["level"], message: string) => void;
+  dismissToast: (id: number) => void;
 }
 
-const api = (): Window['opendesktop'] => window.opendesktop
+const api = (): Window["opendesktop"] => window.opendesktop;
 
-let toastSeq = 0
+let toastSeq = 0;
 
 export const useStore = create<State>((set, get) => ({
   ready: false,
@@ -176,7 +193,7 @@ export const useStore = create<State>((set, get) => ({
   models: [],
   skills: [],
   keyStatus: {},
-  secrets: { available: false, path: '', failed: [], hints: {} },
+  secrets: { available: false, path: "", failed: [], hints: {} },
 
   sessions: [],
   activeSessionId: null,
@@ -188,7 +205,7 @@ export const useStore = create<State>((set, get) => ({
   envStatus: {},
   toasts: [],
 
-  dock: { open: false, tab: 'changes', width: 460 },
+  dock: { open: false, tab: "changes", width: 460 },
   sidebarCollapsed: false,
   settingsOpen: false,
   folderPicker: null,
@@ -197,31 +214,31 @@ export const useStore = create<State>((set, get) => ({
   changesLoading: false,
   gitSummaries: {},
   sessionQuery: {
-    status: 'active',
-    environment: 'all',
-    groupBy: 'date',
-    sortBy: 'recent',
-    search: '',
-    showGitStatus: true
+    status: "active",
+    environment: "all",
+    groupBy: "date",
+    sortBy: "recent",
+    search: "",
+    showGitStatus: true,
   },
   activityQuery: {
-    groupBy: 'none',
-    sortBy: 'recent',
-    search: '',
+    groupBy: "none",
+    sortBy: "recent",
+    search: "",
     statuses: [],
     environments: [],
     agents: [],
     tools: [],
     sessionId: null,
-    since: null
+    since: null,
   },
-  workspacesRoot: '',
+  workspacesRoot: "",
   editorFile: null,
-  browserUrl: '',
+  browserUrl: "",
   browserChrome: null,
   expanded: {},
   activityCollapsed: false,
-  view: 'chat',
+  view: "chat",
   boards: [],
   boardTaskId: null,
   renamingSessionId: null,
@@ -241,23 +258,22 @@ export const useStore = create<State>((set, get) => ({
       skills,
       backgroundTasks,
       boards,
-      workspacesRoot
-    ] =
-      await Promise.all([
-        api().config.get(),
-        api().models.list(),
-        api().sessions.list(),
-        api().approvals.list(),
-        api().activity.all(),
-        api().config.keyStatus(),
-        api().secrets.status(),
-        api().skills.list(),
-        api().background.list(),
-        api().boards.list(),
-        api().files.workspacesRoot()
-      ])
-    const blocks: Record<string, Block> = {}
-    for (const block of activity) blocks[block.id] = block
+      workspacesRoot,
+    ] = await Promise.all([
+      api().config.get(),
+      api().models.list(),
+      api().sessions.list(),
+      api().approvals.list(),
+      api().activity.all(),
+      api().config.keyStatus(),
+      api().secrets.status(),
+      api().skills.list(),
+      api().background.list(),
+      api().boards.list(),
+      api().files.workspacesRoot(),
+    ]);
+    const blocks: Record<string, Block> = {};
+    for (const block of activity) blocks[block.id] = block;
 
     set({
       config,
@@ -272,228 +288,282 @@ export const useStore = create<State>((set, get) => ({
       backgroundTasks,
       boards,
       workspacesRoot,
-      ready: true
-    })
+      ready: true,
+    });
 
-    if (sessions.length > 0) await get().selectSession(sessions[0].id)
-    else await get().newSession()
+    if (sessions.length > 0) await get().selectSession(sessions[0].id);
+    else await get().newSession();
   },
 
   applyEvent(event) {
-    const state = get()
+    const state = get();
     switch (event.type) {
-      case 'config.updated':
-        set({ config: event.config })
-        void api().models.list().then((models) => set({ models }))
-        break
+      case "config.updated":
+        set({ config: event.config });
+        void api()
+          .models.list()
+          .then((models) => set({ models }));
+        break;
 
-      case 'board.updated':
+      case "board.updated":
         set({
-          boards: [...state.boards.filter((b) => b.id !== event.board.id), event.board].sort((a, b) =>
-            a.name.localeCompare(b.name)
-          )
-        })
-        break
+          boards: [
+            ...state.boards.filter((b) => b.id !== event.board.id),
+            event.board,
+          ].sort((a, b) => a.name.localeCompare(b.name)),
+        });
+        break;
 
-      case 'board.deleted':
+      case "board.deleted":
         set({
           boards: state.boards.filter((b) => b.id !== event.boardId),
-          activeBoardId: state.activeBoardId === event.boardId ? null : state.activeBoardId
-        })
-        break
+          activeBoardId:
+            state.activeBoardId === event.boardId ? null : state.activeBoardId,
+        });
+        break;
 
-      case 'session.created':
+      case "session.created":
         set({
-          sessions: [event.session, ...state.sessions.filter((s) => s.id !== event.session.id)],
+          sessions: [
+            event.session,
+            ...state.sessions.filter((s) => s.id !== event.session.id),
+          ],
           // A subagent's transcript is rendered inline in its parent, so start
           // collecting its messages as they stream rather than fetching later.
           messages: event.session.parentSessionId
             ? { ...state.messages, [event.session.id]: [] }
-            : state.messages
-        })
-        break
+            : state.messages,
+        });
+        break;
 
-      case 'session.updated':
+      case "session.updated":
         set({
           sessions: state.sessions
             .map((s) => (s.id === event.session.id ? event.session : s))
-            .sort((a, b) => b.updatedAt - a.updatedAt)
-        })
-        break
+            .sort((a, b) => b.updatedAt - a.updatedAt),
+        });
+        break;
 
-      case 'session.rewound': {
+      case "session.rewound": {
         // Messages and blocks were removed, which no incremental event can
         // express: reload what this session now is.
-        if (get().activeSessionId === event.sessionId) void get().selectSession(event.sessionId)
+        if (get().activeSessionId === event.sessionId)
+          void get().selectSession(event.sessionId);
         else {
-          const next = { ...get().messages }
-          delete next[event.sessionId]
-          set({ messages: next })
+          const next = { ...get().messages };
+          delete next[event.sessionId];
+          set({ messages: next });
         }
-        break
+        break;
       }
-      case 'session.deleted': {
-        const sessions = state.sessions.filter((s) => s.id !== event.sessionId)
-        set({ sessions })
+      case "session.deleted": {
+        const sessions = state.sessions.filter((s) => s.id !== event.sessionId);
+        set({ sessions });
         // Otherwise the board's panel keeps showing a card that is gone.
-        if (state.boardTaskId === event.sessionId) set({ boardTaskId: null })
+        if (state.boardTaskId === event.sessionId) set({ boardTaskId: null });
         if (state.activeSessionId === event.sessionId && sessions.length > 0) {
-          void get().selectSession(sessions[0].id)
+          void get().selectSession(sessions[0].id);
         }
-        break
+        break;
       }
 
-      case 'message.created':
+      /*
+       * A notification was clicked. The main process has already brought the
+       * window forward; choosing the conversation is the part only this side
+       * can do, because it is what the panes are showing.
+       */
+      case "session.focus": {
+        if (state.sessions.some((s) => s.id === event.sessionId)) {
+          void get().selectSession(event.sessionId);
+        }
+        break;
+      }
+
+      case "message.created":
         set({
           messages: {
             ...state.messages,
             [event.message.sessionId]: [
-              ...(state.messages[event.message.sessionId] ?? []).filter((m) => m.id !== event.message.id),
-              event.message
-            ]
-          }
-        })
-        break
+              ...(state.messages[event.message.sessionId] ?? []).filter(
+                (m) => m.id !== event.message.id,
+              ),
+              event.message,
+            ],
+          },
+        });
+        break;
 
-      case 'message.updated':
+      case "message.updated":
         set({
           messages: {
             ...state.messages,
-            [event.message.sessionId]: (state.messages[event.message.sessionId] ?? []).map((m) =>
-              m.id === event.message.id ? event.message : m
-            )
-          }
-        })
-        break
+            [event.message.sessionId]: (
+              state.messages[event.message.sessionId] ?? []
+            ).map((m) => (m.id === event.message.id ? event.message : m)),
+          },
+        });
+        break;
 
-      case 'message.part.delta': {
-        const list = state.messages[event.sessionId] ?? []
+      case "message.part.delta": {
+        const list = state.messages[event.sessionId] ?? [];
         set({
           messages: {
             ...state.messages,
             [event.sessionId]: list.map((m) => {
-              if (m.id !== event.messageId) return m
-              const parts = m.parts.slice()
-              const part = parts[event.partIndex]
-              if (part) parts[event.partIndex] = { ...part, text: (part.text ?? '') + event.text }
-              return { ...m, parts }
-            })
-          }
-        })
-        break
+              if (m.id !== event.messageId) return m;
+              const parts = m.parts.slice();
+              const part = parts[event.partIndex];
+              if (part)
+                parts[event.partIndex] = {
+                  ...part,
+                  text: (part.text ?? "") + event.text,
+                };
+              return { ...m, parts };
+            }),
+          },
+        });
+        break;
       }
 
-      case 'block.created':
+      case "block.created":
         set({
           blocks: { ...state.blocks, [event.block.id]: event.block },
-          activity: [event.block, ...state.activity].slice(0, 800)
-        })
-        break
+          activity: [event.block, ...state.activity].slice(0, 800),
+        });
+        break;
 
-      case 'block.updated':
+      case "block.updated":
         set({
           blocks: { ...state.blocks, [event.block.id]: event.block },
-          activity: state.activity.map((b) => (b.id === event.block.id ? event.block : b))
-        })
-        break
+          activity: state.activity.map((b) =>
+            b.id === event.block.id ? event.block : b,
+          ),
+        });
+        break;
 
-      case 'block.output': {
-        const existing = state.blocks[event.blockId]
-        if (!existing) break
-        const next = { ...existing, output: existing.output + event.chunk }
+      case "block.output": {
+        const existing = state.blocks[event.blockId];
+        if (!existing) break;
+        const next = { ...existing, output: existing.output + event.chunk };
         set({
           blocks: { ...state.blocks, [event.blockId]: next },
-          activity: state.activity.map((b) => (b.id === event.blockId ? next : b))
-        })
-        break
+          activity: state.activity.map((b) =>
+            b.id === event.blockId ? next : b,
+          ),
+        });
+        break;
       }
 
-      case 'approval.requested':
-        set({ approvals: [...state.approvals, event.request] })
-        break
+      case "approval.requested":
+        set({ approvals: [...state.approvals, event.request] });
+        break;
 
-      case 'approval.resolved':
-        set({ approvals: state.approvals.filter((a) => a.id !== event.approvalId) })
-        break
+      case "approval.resolved":
+        set({
+          approvals: state.approvals.filter((a) => a.id !== event.approvalId),
+        });
+        break;
 
-      case 'environment.status':
+      case "environment.status":
         set({
           envStatus: {
             ...state.envStatus,
-            [event.environmentId]: { connected: event.connected, message: event.message }
-          }
-        })
-        break
+            [event.environmentId]: {
+              connected: event.connected,
+              message: event.message,
+            },
+          },
+        });
+        break;
 
-      case 'background.updated': {
-        const others = state.backgroundTasks.filter((task) => task.id !== event.task.id)
+      case "background.updated": {
+        const others = state.backgroundTasks.filter(
+          (task) => task.id !== event.task.id,
+        );
         // Output arrives on its own event, so keep what has accumulated.
-        const previous = state.backgroundTasks.find((task) => task.id === event.task.id)
-        const merged = previous ? { ...event.task, output: previous.output } : event.task
-        set({ backgroundTasks: [merged, ...others].sort((a, b) => b.startedAt - a.startedAt) })
-        break
+        const previous = state.backgroundTasks.find(
+          (task) => task.id === event.task.id,
+        );
+        const merged = previous
+          ? { ...event.task, output: previous.output }
+          : event.task;
+        set({
+          backgroundTasks: [merged, ...others].sort(
+            (a, b) => b.startedAt - a.startedAt,
+          ),
+        });
+        break;
       }
 
-      case 'background.output':
+      case "background.output":
         set({
           backgroundTasks: state.backgroundTasks.map((task) =>
-            task.id === event.taskId ? { ...task, output: task.output + event.chunk } : task
-          )
-        })
-        break
+            task.id === event.taskId
+              ? { ...task, output: task.output + event.chunk }
+              : task,
+          ),
+        });
+        break;
 
-      case 'background.cleared':
-        void get().refreshBackgroundTasks()
-        break
+      case "background.cleared":
+        void get().refreshBackgroundTasks();
+        break;
 
-      case 'toast':
-        get().pushToast(event.level, event.message)
-        break
+      case "toast":
+        get().pushToast(event.level, event.message);
+        break;
     }
   },
 
   async selectSession(id) {
-    set({ activeSessionId: id, changes: null })
-    const [messages, blocks] = await Promise.all([api().sessions.messages(id), api().sessions.blocks(id)])
-    const map = { ...get().blocks }
-    for (const block of blocks) map[block.id] = block
-    set({ messages: { ...get().messages, [id]: messages }, blocks: map })
+    set({ activeSessionId: id, changes: null });
+    const [messages, blocks] = await Promise.all([
+      api().sessions.messages(id),
+      api().sessions.blocks(id),
+    ]);
+    const map = { ...get().blocks };
+    for (const block of blocks) map[block.id] = block;
+    set({ messages: { ...get().messages, [id]: messages }, blocks: map });
   },
 
   async newSession(input) {
-    const config = get().config
+    const config = get().config;
     const session = await api().sessions.create({
-      environmentId: input?.environmentId ?? 'local',
+      environmentId: input?.environmentId ?? "local",
       cwd: input?.cwd,
       // No agent pinned by default: the orchestrator decides per request.
       agentId: input?.agentId ?? MANAGER_AGENT,
-      model: input?.model ?? config?.model
-    })
-    await get().selectSession(session.id)
+      model: input?.model ?? config?.model,
+    });
+    await get().selectSession(session.id);
   },
 
   async send(text, attachments) {
-    const id = get().activeSessionId
-    if (!id || (!text.trim() && !attachments?.length)) return
-    await api().turn.send(id, text, attachments)
+    const id = get().activeSessionId;
+    if (!id || (!text.trim() && !attachments?.length)) return;
+    await api().turn.send(id, text, attachments);
   },
 
   async stop() {
-    const id = get().activeSessionId
-    if (id) await api().turn.stop(id)
+    const id = get().activeSessionId;
+    if (id) await api().turn.stop(id);
   },
 
   openDock: (tab) => set({ dock: { ...get().dock, open: true, tab } }),
   toggleDock: (tab) => {
-    const dock = get().dock
-    set({ dock: { ...dock, open: !(dock.open && dock.tab === tab), tab } })
-    if (tab === 'changes') void get().refreshChanges()
+    const dock = get().dock;
+    set({ dock: { ...dock, open: !(dock.open && dock.tab === tab), tab } });
+    if (tab === "changes") void get().refreshChanges();
   },
   closeDock: () => set({ dock: { ...get().dock, open: false } }),
-  setDockWidth: (width) => set({ dock: { ...get().dock, width: Math.min(900, Math.max(320, width)) } }),
+  setDockWidth: (width) =>
+    set({
+      dock: { ...get().dock, width: Math.min(900, Math.max(320, width)) },
+    }),
   toggleSidebar: () => set({ sidebarCollapsed: !get().sidebarCollapsed }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
-  openFolderPicker: (sessionId, mode = 'browse') => set({ folderPicker: { sessionId, mode } }),
+  openFolderPicker: (sessionId, mode = "browse") =>
+    set({ folderPicker: { sessionId, mode } }),
   closeFolderPicker: () => set({ folderPicker: null }),
   setDraft: (draft) => set({ draft }),
 
@@ -503,48 +573,52 @@ export const useStore = create<State>((set, get) => ({
    * as though the turn never happened.
    */
   async rewindTo(sessionId, messageId) {
-    const result = await api().sessions.rewind(sessionId, messageId)
+    const result = await api().sessions.rewind(sessionId, messageId);
     if (!result.ok) {
-      get().pushToast('warn', result.reason)
-      return
+      get().pushToast("warn", result.reason);
+      return;
     }
-    await get().selectSession(sessionId)
-    set({ draft: { sessionId, text: result.text, attachments: result.attachments } })
+    await get().selectSession(sessionId);
+    set({
+      draft: { sessionId, text: result.text, attachments: result.attachments },
+    });
   },
 
   async forkFrom(sessionId, messageId) {
-    const result = await api().sessions.forkFrom(sessionId, messageId)
+    const result = await api().sessions.forkFrom(sessionId, messageId);
     if (!result.ok) {
-      get().pushToast('warn', result.reason)
-      return
+      get().pushToast("warn", result.reason);
+      return;
     }
     // The copy arrives as a session.created event; selecting it is all that is
     // left to do.
-    await get().selectSession(result.sessionId)
+    await get().selectSession(result.sessionId);
   },
 
   async refreshChanges() {
-    const session = get().sessions.find((s) => s.id === get().activeSessionId)
-    if (!session) return set({ changes: null })
-    set({ changesLoading: true })
+    const session = get().sessions.find((s) => s.id === get().activeSessionId);
+    if (!session) return set({ changes: null });
+    set({ changesLoading: true });
     try {
-      set({ changes: await api().git.changes(session.environmentId, session.cwd) })
+      set({
+        changes: await api().git.changes(session.environmentId, session.cwd),
+      });
     } catch {
-      set({ changes: null })
+      set({ changes: null });
     } finally {
-      set({ changesLoading: false })
+      set({ changesLoading: false });
     }
   },
 
   setSessionQuery: (patch) => {
-    set({ sessionQuery: { ...get().sessionQuery, ...patch } })
-    if (patch.showGitStatus) void get().refreshGitSummaries()
+    set({ sessionQuery: { ...get().sessionQuery, ...patch } });
+    if (patch.showGitStatus) void get().refreshGitSummaries();
   },
   setView: (view) => set({ view }),
   selectBoard: (activeBoardId) => set({ activeBoardId }),
 
   async refreshBoards() {
-    set({ boards: await api().boards.list() })
+    set({ boards: await api().boards.list() });
   },
 
   /**
@@ -557,25 +631,31 @@ export const useStore = create<State>((set, get) => ({
    * the board is the thing you came to look at.
    */
   async openTask(sessionId) {
-    set({ boardTaskId: sessionId })
-    await get().selectSession(sessionId)
+    set({ boardTaskId: sessionId });
+    await get().selectSession(sessionId);
   },
 
   closeTask: () => set({ boardTaskId: null }),
   startRename: (renamingSessionId) => set({ renamingSessionId }),
 
   toggleSearch: () => {
-    const open = !get().searchOpen
+    const open = !get().searchOpen;
     // Closing it clears the filter: leaving a hidden filter applied is how a
     // session list ends up looking empty for no visible reason.
-    set({ searchOpen: open, sessionQuery: { ...get().sessionQuery, search: open ? get().sessionQuery.search : '' } })
+    set({
+      searchOpen: open,
+      sessionQuery: {
+        ...get().sessionQuery,
+        search: open ? get().sessionQuery.search : "",
+      },
+    });
   },
 
   sendToTerminal: (text, run) => {
     set({
       terminalInject: { text: text.trim(), run, nonce: Date.now() },
-      dock: { ...get().dock, open: true, tab: 'terminal' }
-    })
+      dock: { ...get().dock, open: true, tab: "terminal" },
+    });
   },
 
   // Cleared once the terminal has taken it. A command is an act, not state: if
@@ -583,7 +663,8 @@ export const useStore = create<State>((set, get) => ({
   // opens — would run it a second time.
   consumeTerminalInject: () => set({ terminalInject: null }),
 
-  setActivityQuery: (patch) => set({ activityQuery: { ...get().activityQuery, ...patch } }),
+  setActivityQuery: (patch) =>
+    set({ activityQuery: { ...get().activityQuery, ...patch } }),
   setBrowserUrl: (browserUrl) => {
     /*
      * A choice about the address bar belongs to the kind of thing being
@@ -592,8 +673,9 @@ export const useStore = create<State>((set, get) => ({
      * Within one kind, what was chosen by hand stands.
      */
     const kindChanged =
-      Boolean(previewTarget(get().browserUrl)) !== Boolean(previewTarget(browserUrl))
-    set({ browserUrl, ...(kindChanged ? { browserChrome: null } : {}) })
+      Boolean(previewTarget(get().browserUrl)) !==
+      Boolean(previewTarget(browserUrl));
+    set({ browserUrl, ...(kindChanged ? { browserChrome: null } : {}) });
   },
   setBrowserChrome: (browserChrome) => set({ browserChrome }),
   /**
@@ -604,18 +686,20 @@ export const useStore = create<State>((set, get) => ({
    * does nothing visible.
    */
   openInEditor: (editorFile) => {
-    set({ editorFile })
-    if (editorFile) get().openDock('editor')
+    set({ editorFile });
+    if (editorFile) get().openDock("editor");
   },
-  toggleBlock: (id) => set({ expanded: { ...get().expanded, [id]: !get().expanded[id] } }),
-  setExpanded: (id, value) => set({ expanded: { ...get().expanded, [id]: value } }),
+  toggleBlock: (id) =>
+    set({ expanded: { ...get().expanded, [id]: !get().expanded[id] } }),
+  setExpanded: (id, value) =>
+    set({ expanded: { ...get().expanded, [id]: value } }),
   toggleActivity: () => set({ activityCollapsed: !get().activityCollapsed }),
 
   async refreshActivity() {
-    const activity = await api().activity.all()
-    const blocks = { ...get().blocks }
-    for (const block of activity) blocks[block.id] = block
-    set({ activity, blocks })
+    const activity = await api().activity.all();
+    const blocks = { ...get().blocks };
+    for (const block of activity) blocks[block.id] = block;
+    set({ activity, blocks });
   },
 
   /**
@@ -623,54 +707,63 @@ export const useStore = create<State>((set, get) => ({
    * in the same repository, and this runs whenever the list is shown.
    */
   async refreshGitSummaries() {
-    if (!get().sessionQuery.showGitStatus) return
-    const wanted = new Map<string, { environmentId: string; cwd: string }>()
+    if (!get().sessionQuery.showGitStatus) return;
+    const wanted = new Map<string, { environmentId: string; cwd: string }>();
     for (const session of get().sessions) {
-      if (session.parentSessionId) continue
+      if (session.parentSessionId) continue;
       wanted.set(`${session.environmentId}:${session.cwd}`, {
         environmentId: session.environmentId,
-        cwd: session.cwd
-      })
+        cwd: session.cwd,
+      });
     }
     const entries = await Promise.all(
       [...wanted.entries()].map(async ([key, where]) => {
         try {
-          return [key, await api().git.summary(where.environmentId, where.cwd)] as const
+          return [
+            key,
+            await api().git.summary(where.environmentId, where.cwd),
+          ] as const;
         } catch {
-          return [key, { isRepo: false, branch: '', dirty: 0 }] as const
+          return [key, { isRepo: false, branch: "", dirty: 0 }] as const;
         }
-      })
-    )
-    set({ gitSummaries: Object.fromEntries(entries) })
+      }),
+    );
+    set({ gitSummaries: Object.fromEntries(entries) });
   },
 
   async refreshBackgroundTasks() {
-    set({ backgroundTasks: await api().background.list() })
+    set({ backgroundTasks: await api().background.list() });
   },
 
   async refreshSkills() {
-    set({ skills: await api().skills.list() })
+    set({ skills: await api().skills.list() });
   },
 
   async refreshSecrets() {
-    const [secrets, keyStatus] = await Promise.all([api().secrets.status(), api().config.keyStatus()])
-    set({ secrets, keyStatus })
+    const [secrets, keyStatus] = await Promise.all([
+      api().secrets.status(),
+      api().config.keyStatus(),
+    ]);
+    set({ secrets, keyStatus });
   },
 
   async refreshConfig() {
     const [config, models, keyStatus] = await Promise.all([
       api().config.get(),
       api().models.list(),
-      api().config.keyStatus()
-    ])
-    set({ config, models, keyStatus })
+      api().config.keyStatus(),
+    ]);
+    set({ config, models, keyStatus });
   },
 
   pushToast: (level, message) =>
-    set({ toasts: [...get().toasts, { id: ++toastSeq, level, message }].slice(-4) }),
+    set({
+      toasts: [...get().toasts, { id: ++toastSeq, level, message }].slice(-4),
+    }),
 
-  dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) })
-}))
+  dismissToast: (id) =>
+    set({ toasts: get().toasts.filter((t) => t.id !== id) }),
+}));
 
 export const activeSession = (state: State): Session | undefined =>
-  state.sessions.find((s) => s.id === state.activeSessionId)
+  state.sessions.find((s) => s.id === state.activeSessionId);

@@ -1,7 +1,9 @@
-import clsx from 'clsx'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import clsx from "clsx";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
+  Bell,
+  BellOff,
   Minimize2,
   PanelLeft,
   Plus,
@@ -16,39 +18,41 @@ import {
   MoreVertical,
   Settings as SettingsIcon,
   SquareTerminal,
-  Trash2
-} from 'lucide-react'
-import { activeSession, useStore, type DockTab } from '../state/store'
-import { folderName } from '../lib/format'
-import { formatCost } from '@shared/cost'
-import { EditableTitle } from './EditableTitle'
-import { DiffSquare } from './icons'
+  Trash2,
+} from "lucide-react";
+import { activeSession, useStore, type DockTab } from "../state/store";
+import { folderName } from "../lib/format";
+import { formatCost } from "@shared/cost";
+import { EditableTitle } from "./EditableTitle";
+import { DiffSquare } from "./icons";
 
 function DockButton({
   tab,
   title,
-  children
+  children,
 }: {
-  tab: DockTab
-  title: string
-  children: ReactNode
+  tab: DockTab;
+  title: string;
+  children: ReactNode;
 }): ReactNode {
-  const dock = useStore((s) => s.dock)
-  const toggleDock = useStore((s) => s.toggleDock)
-  const active = dock.open && dock.tab === tab
+  const dock = useStore((s) => s.dock);
+  const toggleDock = useStore((s) => s.toggleDock);
+  const active = dock.open && dock.tab === tab;
   return (
     <button
       type="button"
       title={title}
       onClick={() => toggleDock(tab)}
       className={clsx(
-        'no-drag rounded-md p-1.5 transition-colors',
-        active ? 'bg-ink-800 text-ink-100' : 'text-ink-400 hover:bg-ink-850 hover:text-ink-100'
+        "no-drag rounded-md p-1.5 transition-colors",
+        active
+          ? "bg-ink-800 text-ink-100"
+          : "text-ink-400 hover:bg-ink-850 hover:text-ink-100",
       )}
     >
       {children}
     </button>
-  )
+  );
 }
 
 function MenuItem({
@@ -56,61 +60,64 @@ function MenuItem({
   label,
   shortcut,
   onClick,
-  danger
+  danger,
 }: {
-  icon: ReactNode
-  label: string
-  shortcut?: string
-  onClick: () => void
-  danger?: boolean
+  icon: ReactNode;
+  label: string;
+  shortcut?: string;
+  onClick: () => void;
+  danger?: boolean;
 }): ReactNode {
   return (
     <button
       type="button"
       onClick={onClick}
       className={clsx(
-        'flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-left text-[13px]',
-        danger ? 'text-bad hover:bg-bad/10' : 'text-ink-200 hover:bg-ink-800'
+        "flex w-full items-center gap-2.5 rounded-md px-2.5 py-[6px] text-left text-[13px]",
+        danger ? "text-bad hover:bg-bad/10" : "text-ink-200 hover:bg-ink-800",
       )}
     >
       {icon}
       {label}
-      {shortcut ? <span className="text-ink-600 ml-auto text-[11px]">{shortcut}</span> : null}
+      {shortcut ? (
+        <span className="text-ink-600 ml-auto text-[11px]">{shortcut}</span>
+      ) : null}
     </button>
-  )
+  );
 }
 
 export function TopBar(): ReactNode {
-  const session = useStore(activeSession)
-  const collapsed = useStore((s) => s.sidebarCollapsed)
-  const toggleSidebar = useStore((s) => s.toggleSidebar)
-  const searchOpen = useStore((s) => s.searchOpen)
-  const toggleSearch = useStore((s) => s.toggleSearch)
-  const view = useStore((s) => s.view)
-  const openDock = useStore((s) => s.openDock)
-  const setSettingsOpen = useStore((s) => s.setSettingsOpen)
-  const approvals = useStore((s) => s.approvals.length)
+  const session = useStore(activeSession);
+  const collapsed = useStore((s) => s.sidebarCollapsed);
+  const toggleSidebar = useStore((s) => s.toggleSidebar);
+  const searchOpen = useStore((s) => s.searchOpen);
+  const toggleSearch = useStore((s) => s.toggleSearch);
+  const view = useStore((s) => s.view);
+  const openDock = useStore((s) => s.openDock);
+  const setSettingsOpen = useStore((s) => s.setSettingsOpen);
+  const approvals = useStore((s) => s.approvals.length);
   const backgroundRunning = useStore(
     (s) =>
       s.backgroundTasks.filter(
         (task) =>
-          (task.rootSessionId === s.activeSessionId || task.sessionId === s.activeSessionId) &&
-          task.status === 'running'
-      ).length
-  )
-  const newSession = useStore((s) => s.newSession)
+          (task.rootSessionId === s.activeSessionId ||
+            task.sessionId === s.activeSessionId) &&
+          task.status === "running",
+      ).length,
+  );
+  const newSession = useStore((s) => s.newSession);
 
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menu = useRef<HTMLDivElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menu = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!menuOpen) return
+    if (!menuOpen) return;
     const onClick = (event: MouseEvent): void => {
-      if (!menu.current?.contains(event.target as Node)) setMenuOpen(false)
-    }
-    window.addEventListener('mousedown', onClick)
-    return () => window.removeEventListener('mousedown', onClick)
-  }, [menuOpen])
+      if (!menu.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    window.addEventListener("mousedown", onClick);
+    return () => window.removeEventListener("mousedown", onClick);
+  }, [menuOpen]);
 
   return (
     /**
@@ -126,7 +133,7 @@ export function TopBar(): ReactNode {
       <button
         type="button"
         onClick={toggleSidebar}
-        title={collapsed ? 'Show sidebar' : 'Hide sidebar'}
+        title={collapsed ? "Show sidebar" : "Hide sidebar"}
         className="no-drag text-ink-500 hover:bg-ink-800 hover:text-ink-100 shrink-0 rounded-md p-1.5"
       >
         <PanelLeft className="h-4 w-4" />
@@ -136,8 +143,10 @@ export function TopBar(): ReactNode {
         onClick={toggleSearch}
         title="Search sessions"
         className={clsx(
-          'no-drag shrink-0 rounded-md p-1.5',
-          searchOpen ? 'bg-ink-800 text-ink-100' : 'text-ink-500 hover:bg-ink-800 hover:text-ink-100'
+          "no-drag shrink-0 rounded-md p-1.5",
+          searchOpen
+            ? "bg-ink-800 text-ink-100"
+            : "text-ink-500 hover:bg-ink-800 hover:text-ink-100",
         )}
       >
         <Search className="h-4 w-4" />
@@ -151,19 +160,23 @@ export function TopBar(): ReactNode {
         <Plus className="h-4 w-4" />
       </button>
 
-      {view === 'board' ? <span className="flex-1" /> : null}
+      {view === "board" ? <span className="flex-1" /> : null}
 
-      {view === 'chat' && session ? (
+      {view === "chat" && session ? (
         <EditableTitle
           value={session.title}
-          onCommit={(title) => void window.opendesktop.sessions.update(session.id, { title })}
+          onCommit={(title) =>
+            void window.opendesktop.sessions.update(session.id, { title })
+          }
           className="no-drag text-ink-100 text-[13.5px] font-medium"
           inputClassName="no-drag min-w-0 flex-1 text-[13.5px] font-medium"
         />
-      ) : view === 'chat' ? (
-        <span className="text-ink-100 min-w-0 truncate text-[13.5px] font-medium">OpenDesktop</span>
+      ) : view === "chat" ? (
+        <span className="text-ink-100 min-w-0 truncate text-[13.5px] font-medium">
+          OpenDesktop
+        </span>
       ) : null}
-      {view === 'chat' && session ? (
+      {view === "chat" && session ? (
         <span className="bg-ink-800 text-ink-400 shrink-0 rounded-md px-1.5 py-[2px] text-[11.5px]">
           {folderName(session.cwd)}
         </span>
@@ -173,7 +186,7 @@ export function TopBar(): ReactNode {
           and grew a panel: a percentage is enough to know a summary is coming
           and not enough to do anything about it. What this conversation has
           cost stays, because it is a fact about the session like its folder. */}
-      {view === 'chat' && session && session.usage.cost > 0 ? (
+      {view === "chat" && session && session.usage.cost > 0 ? (
         <span
           title="What this session has cost so far"
           className="text-ink-600 shrink-0 text-[11.5px]"
@@ -183,7 +196,12 @@ export function TopBar(): ReactNode {
       ) : null}
 
       {/* The dock is a chat-side thing; on the board the panel is the task. */}
-      <div className={clsx('no-drag ml-auto flex items-center gap-0.5', view === 'board' && 'hidden')}>
+      <div
+        className={clsx(
+          "no-drag ml-auto flex items-center gap-0.5",
+          view === "board" && "hidden",
+        )}
+      >
         <DockButton tab="activity" title="Activity">
           <span className="relative block">
             <Activity className="h-4 w-4" />
@@ -222,8 +240,10 @@ export function TopBar(): ReactNode {
             title="More"
             onClick={() => setMenuOpen(!menuOpen)}
             className={clsx(
-              'rounded-md p-1.5 transition-colors',
-              menuOpen ? 'bg-ink-800 text-ink-100' : 'text-ink-400 hover:bg-ink-850 hover:text-ink-100'
+              "rounded-md p-1.5 transition-colors",
+              menuOpen
+                ? "bg-ink-800 text-ink-100"
+                : "text-ink-400 hover:bg-ink-850 hover:text-ink-100",
             )}
           >
             <MoreVertical className="h-4 w-4" />
@@ -235,8 +255,8 @@ export function TopBar(): ReactNode {
                 icon={<SettingsIcon className="h-4 w-4" />}
                 label="Settings"
                 onClick={() => {
-                  setSettingsOpen(true)
-                  setMenuOpen(false)
+                  setSettingsOpen(true);
+                  setMenuOpen(false);
                 }}
               />
               <div className="bg-ink-800 my-1 h-px" />
@@ -249,10 +269,10 @@ export function TopBar(): ReactNode {
                       cwd: session.cwd,
                       environmentId: session.environmentId,
                       agentId: session.agentId,
-                      model: session.model
-                    })
+                      model: session.model,
+                    });
                   }
-                  setMenuOpen(false)
+                  setMenuOpen(false);
                 }}
               />
               <div className="bg-ink-800 my-1 h-px" />
@@ -262,8 +282,38 @@ export function TopBar(): ReactNode {
                 onClick={() => {
                   // A person knows a thread of work is finished before any
                   // threshold does.
-                  if (session) void window.opendesktop.sessions.compact(session.id)
-                  setMenuOpen(false)
+                  if (session)
+                    void window.opendesktop.sessions.compact(session.id);
+                  setMenuOpen(false);
+                }}
+              />
+              <div className="bg-ink-800 my-1 h-px" />
+              {/*
+                The same choice the session's own menu offers, one click away
+                from the conversation it is about. Two states here rather than
+                four: the nuance lives in the sidebar's menu, and what somebody
+                wants from the window they are in is "stop telling me".
+              */}
+              <MenuItem
+                icon={
+                  session?.notify === "muted" ? (
+                    <Bell className="h-4 w-4" />
+                  ) : (
+                    <BellOff className="h-4 w-4" />
+                  )
+                }
+                label={
+                  session?.notify === "muted"
+                    ? "Unmute notifications"
+                    : "Mute notifications"
+                }
+                onClick={() => {
+                  if (session) {
+                    void window.opendesktop.sessions.update(session.id, {
+                      notify: session.notify === "muted" ? undefined : "muted",
+                    });
+                  }
+                  setMenuOpen(false);
                 }}
               />
               <div className="bg-ink-800 my-1 h-px" />
@@ -271,8 +321,11 @@ export function TopBar(): ReactNode {
                 icon={<Archive className="h-4 w-4" />}
                 label="Archive"
                 onClick={() => {
-                  if (session) void window.opendesktop.sessions.update(session.id, { archived: true })
-                  setMenuOpen(false)
+                  if (session)
+                    void window.opendesktop.sessions.update(session.id, {
+                      archived: true,
+                    });
+                  setMenuOpen(false);
                 }}
               />
               <MenuItem
@@ -280,8 +333,9 @@ export function TopBar(): ReactNode {
                 icon={<Trash2 className="h-4 w-4" />}
                 label="Delete"
                 onClick={() => {
-                  if (session) void window.opendesktop.sessions.remove(session.id)
-                  setMenuOpen(false)
+                  if (session)
+                    void window.opendesktop.sessions.remove(session.id);
+                  setMenuOpen(false);
                 }}
               />
             </div>
@@ -289,5 +343,5 @@ export function TopBar(): ReactNode {
         </div>
       </div>
     </header>
-  )
+  );
 }
