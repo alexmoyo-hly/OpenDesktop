@@ -5,8 +5,8 @@ import {
   streamText,
   type ModelMessage,
   type ToolSet,
-  type UserContent
-} from 'ai'
+  type UserContent,
+} from "ai";
 import {
   MANAGER_AGENT,
   isManager,
@@ -15,38 +15,54 @@ import {
   type Attachment,
   type Message,
   type ProviderModelConfig,
-  type WorktreeInfo
-} from '@shared/types'
-import type { SandboxScope } from '@shared/sandbox'
-import { savingsOf, type Savings } from '@shared/savings'
-import { QUIET_WARN_MS, quietVerdict } from '@shared/quiet'
-import { allowanceFor, allowanceUsed, needsSlimHarness, pickModel } from '@shared/routing'
-import { canReason, effortLevel, reasoningOptions } from '@shared/effort'
-import { mentionToken, mentionedAgents } from '@shared/mentions'
-import { costOf, formatCost } from '@shared/cost'
-import { isAbort } from '@shared/errors'
-import { budgetFor } from '@shared/context'
-import { effectivePermissions, resolvedConfig } from '../config'
-import { bus } from '../bus'
-import { cancelSessionApprovals, withoutPrompts } from '../approvals'
-import { resolveModel } from '../providers'
-import { getRuntime, type Runtime } from '../runtime'
-import { rtkStatus } from '../rtk'
-import { workerIsTheSameModel } from '../shunt'
-import { record as meterRecord, spentLookup } from '../meter'
-import { logError, logLine } from '../log'
-import { runHooks } from '../hooks'
-import { commitWorkspace, ensureHistory, isWorkspace } from '../workspace'
-import * as store from '../store'
-import * as history from '../history'
-import { MUTATING_TOOLS, createTools, externalTools, type ToolContext } from './tools'
-import { expandSkills } from '../skills'
-import { modelAcceptsImages, readAttachment } from '../attachments'
+  type WorktreeInfo,
+} from "@shared/types";
+import type { SandboxScope } from "@shared/sandbox";
+import { savingsOf, type Savings } from "@shared/savings";
+import { QUIET_WARN_MS, quietVerdict } from "@shared/quiet";
+import {
+  allowanceFor,
+  allowanceUsed,
+  needsSlimHarness,
+  pickModel,
+} from "@shared/routing";
+import { canReason, effortLevel, reasoningOptions } from "@shared/effort";
+import { mentionToken, mentionedAgents } from "@shared/mentions";
+import { costOf, formatCost } from "@shared/cost";
+import { isAbort } from "@shared/errors";
+import { budgetFor } from "@shared/context";
+import { effectivePermissions, resolvedConfig } from "../config";
+import { bus } from "../bus";
+import { cancelSessionApprovals, withoutPrompts } from "../approvals";
+import { resolveModel } from "../providers";
+import { getRuntime, type Runtime } from "../runtime";
+import { rtkStatus } from "../rtk";
+import { workerIsTheSameModel } from "../shunt";
+import { record as meterRecord, spentLookup } from "../meter";
+import { logError, logLine } from "../log";
+import { runHooks } from "../hooks";
+import { commitWorkspace, ensureHistory, isWorkspace } from "../workspace";
+import * as store from "../store";
+import * as history from "../history";
+import {
+  MUTATING_TOOLS,
+  createTools,
+  externalTools,
+  type ToolContext,
+} from "./tools";
+import { expandSkills } from "../skills";
+import {
+  BRIEF_LIMIT,
+  SLIM_BRIEF_LIMIT,
+  briefSection,
+  projectBrief,
+} from "../project-brief";
+import { modelAcceptsImages, readAttachment } from "../attachments";
 
-const controllers = new Map<string, AbortController>()
+const controllers = new Map<string, AbortController>();
 
 export function isRunning(sessionId: string): boolean {
-  return controllers.has(sessionId)
+  return controllers.has(sessionId);
 }
 
 /**
@@ -59,11 +75,11 @@ export function isRunning(sessionId: string): boolean {
  * typing it, and what other clients do with the same gesture.
  */
 export function queueFollowUp(sessionId: string, text: string): void {
-  const session = store.getSession(sessionId)
-  if (!session || !text.trim()) return
+  const session = store.getSession(sessionId);
+  if (!session || !text.trim()) return;
   store.updateSession(sessionId, {
-    queuedFollowUps: [...(session.queuedFollowUps ?? []), text.trim()]
-  })
+    queuedFollowUps: [...(session.queuedFollowUps ?? []), text.trim()],
+  });
 }
 
 /**
@@ -75,22 +91,28 @@ export function queueFollowUp(sessionId: string, text: string): void {
  */
 export function deliverQueuedFollowUps(): void {
   for (const session of store.listSessions()) {
-    const waiting = session.queuedFollowUps
-    if (!waiting || waiting.length === 0) continue
-    if (session.archived || isRunning(session.id)) continue
-    store.updateSession(session.id, { queuedFollowUps: undefined })
-    logLine('info', `session ${session.id} had ${waiting.length} queued message(s) from last time`)
-    void runTurn({ sessionId: session.id, userText: waiting.join('\n\n') }).catch(() => {
+    const waiting = session.queuedFollowUps;
+    if (!waiting || waiting.length === 0) continue;
+    if (session.archived || isRunning(session.id)) continue;
+    store.updateSession(session.id, { queuedFollowUps: undefined });
+    logLine(
+      "info",
+      `session ${session.id} had ${waiting.length} queued message(s) from last time`,
+    );
+    void runTurn({
+      sessionId: session.id,
+      userText: waiting.join("\n\n"),
+    }).catch(() => {
       // runTurn records its own failures.
-    })
+    });
   }
 }
 
 export function stop(sessionId: string): void {
-  cancelSessionApprovals(sessionId)
-  controllers.get(sessionId)?.abort()
-  controllers.delete(sessionId)
-  store.setSessionStatus(sessionId, 'idle')
+  cancelSessionApprovals(sessionId);
+  controllers.get(sessionId)?.abort();
+  controllers.delete(sessionId);
+  store.setSessionStatus(sessionId, "idle");
 }
 
 /**
@@ -101,20 +123,24 @@ export function stop(sessionId: string): void {
  */
 function orchestrator(config: AppConfig): AgentConfig {
   const roster = Object.values(config.agent)
-    .filter((a) => a.mode === 'subagent' || a.mode === 'all')
-    .map((a) => `- ${mentionToken(a)} (id \`${a.id}\`): ${a.description || a.name}`)
-    .join('\n')
+    .filter((a) => a.mode === "subagent" || a.mode === "all")
+    .map(
+      (a) =>
+        `- ${mentionToken(a)} (id \`${a.id}\`): ${a.description || a.name}`,
+    )
+    .join("\n");
 
   return {
     id: MANAGER_AGENT,
-    name: 'Manager',
-    description: 'Does the ordinary work, and splits off what belongs to a specialist.',
-    mode: 'primary',
-    color: '#d97757',
+    name: "Manager",
+    description:
+      "Does the ordinary work, and splits off what belongs to a specialist.",
+    mode: "primary",
+    color: "#d97757",
     prompt: `You are the lead engineer on this session. You decide how the work gets done.
 
 # Specialists you can delegate to
-${roster || '(none configured)'}
+${roster || "(none configured)"}
 
 # When the user names one with @
 \`@Name\` in the request names an agent from the list above. It is an
@@ -159,15 +185,18 @@ Whatever you do yourself, ask for it all at once where you can: calls in the
 same step run at the same time, and a step you spend waiting for one answer
 before asking the next question costs another pass over the whole conversation.
 
-Answer in the language the user wrote in.`
-  }
+Answer in the language the user wrote in.`,
+  };
 }
 
 /** The model entry behind a `provider/model` ref, if the config has one. */
-function declaredModel(config: AppConfig, ref: string): ProviderModelConfig | undefined {
-  const slash = ref.indexOf('/')
-  if (slash === -1) return undefined
-  return config.provider[ref.slice(0, slash)]?.models[ref.slice(slash + 1)]
+function declaredModel(
+  config: AppConfig,
+  ref: string,
+): ProviderModelConfig | undefined {
+  const slash = ref.indexOf("/");
+  if (slash === -1) return undefined;
+  return config.provider[ref.slice(0, slash)]?.models[ref.slice(slash + 1)];
 }
 
 /**
@@ -194,7 +223,7 @@ function declaredModel(config: AppConfig, ref: string): ProviderModelConfig | un
  * something, find something, change a line — plus every route it has to a
  * bigger one.
  */
-const SLIM_WITHOUT = ['task', 'fetch'] as const
+const SLIM_WITHOUT = ["task", "fetch"] as const;
 
 /**
  * The same agent with fewer tools, and without the manager's brief.
@@ -207,16 +236,16 @@ const SLIM_WITHOUT = ['task', 'fetch'] as const
  * else's instruction is not this function's business.
  */
 function slimHarness(agent: AgentConfig): AgentConfig {
-  const off: Record<string, boolean> = { ...(agent.tools ?? {}) }
-  for (const name of SLIM_WITHOUT) off[name] = false
+  const off: Record<string, boolean> = { ...(agent.tools ?? {}) };
+  for (const name of SLIM_WITHOUT) off[name] = false;
   return {
     ...agent,
     tools: off,
     prompt: isManager(agent.id)
-      ? 'You are a careful assistant working in one folder. Do the small, ' +
-        'concrete thing you were asked for, using the tools to look before you answer.'
-      : agent.prompt
-  }
+      ? "You are a careful assistant working in one folder. Do the small, " +
+        "concrete thing you were asked for, using the tools to look before you answer."
+      : agent.prompt,
+  };
 }
 
 /**
@@ -247,7 +276,7 @@ function slimRules(): string {
   \`deliver\` so it appears as something they can open. A file a command wrote is
   otherwise invisible here.
 - If you cannot do it with the tools you have, say so plainly and stop.
-- Write to the user in the language they wrote to you in.`
+- Write to the user in the language they wrote to you in.`;
 }
 
 /**
@@ -260,40 +289,44 @@ function slimRules(): string {
  * into a task handed back.
  */
 function restrictions(available: string[]): string {
-  const missing = MUTATING_TOOLS.filter((name) => !available.includes(name))
-  if (missing.length === 0) return ''
+  const missing = MUTATING_TOOLS.filter((name) => !available.includes(name));
+  if (missing.length === 0) return "";
 
-  const cannot: string[] = []
-  if (!available.includes('write') || !available.includes('edit')) cannot.push('change files')
-  if (!available.includes('bash')) cannot.push('run commands')
+  const cannot: string[] = [];
+  if (!available.includes("write") || !available.includes("edit"))
+    cannot.push("change files");
+  if (!available.includes("bash")) cannot.push("run commands");
 
   return `
 
 # What you cannot do in this session
-You have no ${missing.join(' and no ')} tool here, so you cannot ${cannot.join(' or ')}.
+You have no ${missing.join(" and no ")} tool here, so you cannot ${cannot.join(" or ")}.
 That is this agent's configuration, not an obstacle to get around. If the work
 you were asked for needs one of them, do the part you can and then hand the rest
 back with \`need_human\`, saying exactly what has to be done. Do not write the
-change out and finish as though you had made it.`
+change out and finish as though you had made it.`;
 }
 
-function systemPrompt(agent: AgentConfig, input: {
-  cwd: string
-  environmentLabel: string
-  environmentKind: string
-  platform: string
-  date: string
-  tools: string[]
-  /** Set when this conversation works on a branch cut for it. */
-  worktree?: WorktreeInfo
-  /** Set on a sandbox session: what it is authorised to reach, if anything yet. */
-  sandbox?: SandboxScope
-  /** A model declared as modest gets the short version of all of this. */
-  slim?: boolean
-}): string {
+function systemPrompt(
+  agent: AgentConfig,
+  input: {
+    cwd: string;
+    environmentLabel: string;
+    environmentKind: string;
+    platform: string;
+    date: string;
+    tools: string[];
+    /** Set when this conversation works on a branch cut for it. */
+    worktree?: WorktreeInfo;
+    /** Set on a sandbox session: what it is authorised to reach, if anything yet. */
+    sandbox?: SandboxScope;
+    /** A model declared as modest gets the short version of all of this. */
+    slim?: boolean;
+  },
+): string {
   const base =
     agent.prompt ??
-    'You are a capable software engineering agent. Answer in the language the user wrote in.'
+    "You are a capable software engineering agent. Answer in the language the user wrote in.";
 
   /*
    * The scope, on a sandbox session. This is not advice — it is the state of the
@@ -301,15 +334,15 @@ function systemPrompt(agent: AgentConfig, input: {
    * turn discovering it. No target means no network at all.
    */
   const sandbox =
-    input.environmentKind === 'container'
+    input.environmentKind === "container"
       ? input.sandbox && input.sandbox.targets.length > 0
-        ? `\n- Sandbox: authorised to reach only ${input.sandbox.targets.join(', ')}. The container's ` +
+        ? `\n- Sandbox: authorised to reach only ${input.sandbox.targets.join(", ")}. The container's ` +
           `firewall drops everything else, so a scan of anything not on that list will simply fail. ` +
           `Stay inside it; if you need another target, ask the user to authorise it.`
         : `\n- Sandbox: no target authorised yet, so the container has NO network. Nothing outward ` +
           `will work until the user declares a target and confirms they may test it. Do local, ` +
           `offline preparation only, and tell the user what target you need.`
-      : ''
+      : "";
 
   /*
    * One line, because that is all it changes: the tools already work on the
@@ -319,8 +352,8 @@ function systemPrompt(agent: AgentConfig, input: {
    */
   const branch = input.worktree
     ? `\n- Branch: ${input.worktree.branch}, a checkout of ${input.worktree.repoRoot} made for this conversation. ` +
-      'Commit here as normal; never merge, rebase, push or switch branches — the person decides what happens to this branch.'
-    : ''
+      "Commit here as normal; never merge, rebase, push or switch branches — the person decides what happens to this branch."
+    : "";
 
   if (input.slim) {
     return `${base}
@@ -328,7 +361,7 @@ function systemPrompt(agent: AgentConfig, input: {
 # Environment
 - Working directory: ${input.cwd}${branch}${sandbox}
 - Execution target: ${input.environmentLabel} (${input.environmentKind})
-- Today: ${input.date}${slimRules()}${restrictions(input.tools)}`
+- Today: ${input.date}${slimRules()}${restrictions(input.tools)}`;
   }
 
   return `${base}
@@ -353,10 +386,13 @@ function systemPrompt(agent: AgentConfig, input: {
   each other belong in one step. Waiting for the first before asking for the
   second doubles both the wall clock and the bill, and the only reason to take
   turns is when one call's answer decides what the next one should be.
-- **Do not narrate.** No "let me check…", no "now I'll run…", no announcing a
-  tool call before making it: the interface already shows what you ran and what
-  it said. A line before a call is worth writing only when it says something the
-  call does not — a decision, a surprise, a reason for doing the unexpected thing.
+- **Say what you are doing, once per phase.** A turn is often twenty calls, and
+  the blocks show each one without ever saying what they add up to. So when you
+  start a stretch of work — or when what you found changes the plan — write one
+  short line first: what you are looking for, what you are about to change, what
+  the last result means. Then let the calls run. Not before every call: that is
+  noise and it costs a step's worth of tokens, so no "let me check…", no "now
+  I'll run…", and no restating the command the next block already shows.
 - **Do not repeat yourself.** The transcript is in front of the user: restating
   the plan, re-summarising what you just found, or re-listing what you already
   listed is text they have read, and it is the single biggest thing you spend
@@ -370,8 +406,8 @@ function systemPrompt(agent: AgentConfig, input: {
 - When a check disagrees with the code, the code is what was asked about: fix it, or
   say why the check itself was wrong. Never edit an expectation to make a run pass.
 - Write to the user in the language they wrote to you in, and keep to it.${restrictions(
-    input.tools
-  )}`
+    input.tools,
+  )}`;
 }
 
 /**
@@ -384,7 +420,7 @@ function systemPrompt(agent: AgentConfig, input: {
  * gets both notes, because both are true.
  */
 function savingsGuidance(savings: Savings, planner: string | null): string {
-  let text = ''
+  let text = "";
 
   if (savings.rtk) {
     text += `
@@ -398,7 +434,7 @@ Directory listings and searches are filtered the same way.
 What comes back is meant to be enough to act on. Do not re-run a command with
 more flags to see "the real output", and do not conclude a command printed
 nothing because it printed little. A file's contents are never filtered: when
-you need exact text — before an edit, always — use \`read\`.`
+you need exact text — before an edit, always — use \`read\`.`;
   }
 
   if (savings.shunt) {
@@ -419,28 +455,35 @@ every turn afterwards, so in this session that is not how files get read.
   the only thing you should trust for exact text.
 - \`code_write\` generates a file from a spec and a reference file without the
   result passing through here. For work that is mostly predictable from
-  something that already exists. Anything needing judgement you do yourself.`
+  something that already exists. Anything needing judgement you do yourself.`;
 
     if (planner) {
       text += `
 - \`plan\` asks ${planner}, which is more capable than you, how to do something
   hard — before you start it, not after it has gone wrong. Use it when the work
   has several moving parts or when a wrong approach would be expensive to undo.
-  The plan comes from the stronger model; the work is still yours.`
+  The plan comes from the stronger model; the work is still yours.`;
     }
   }
 
-  return text
+  return text;
 }
 
-async function describeTarget(environmentId: string, sessionId: string): Promise<{ platform: string }> {
+async function describeTarget(
+  environmentId: string,
+  sessionId: string,
+): Promise<{ platform: string }> {
   try {
-    const runtime = getRuntime(environmentId, sessionId)
-    if (runtime.kind === 'local') return { platform: `${process.platform} ${process.arch}` }
-    const res = await runtime.exec('uname -sm', { cwd: '/', timeoutMs: 10_000 })
-    return { platform: res.stdout.trim() || 'unknown' }
+    const runtime = getRuntime(environmentId, sessionId);
+    if (runtime.kind === "local")
+      return { platform: `${process.platform} ${process.arch}` };
+    const res = await runtime.exec("uname -sm", {
+      cwd: "/",
+      timeoutMs: 10_000,
+    });
+    return { platform: res.stdout.trim() || "unknown" };
   } catch {
-    return { platform: 'unknown' }
+    return { platform: "unknown" };
   }
 }
 
@@ -454,41 +497,45 @@ export function buildUserMessage(
   config: AppConfig,
   model: string,
   text: string,
-  attachments: Attachment[] | undefined
+  attachments: Attachment[] | undefined,
 ): ModelMessage {
-  if (!attachments || attachments.length === 0) return { role: 'user', content: text }
+  if (!attachments || attachments.length === 0)
+    return { role: "user", content: text };
 
-  const parts: Extract<UserContent, unknown[]> = []
+  const parts: Extract<UserContent, unknown[]> = [];
 
-  const images = attachments.filter((a) => a.kind === 'image')
-  const texts = attachments.filter((a) => a.kind === 'text')
-  const canSeeImages = modelAcceptsImages(config, model)
+  const images = attachments.filter((a) => a.kind === "image");
+  const texts = attachments.filter((a) => a.kind === "text");
+  const canSeeImages = modelAcceptsImages(config, model);
 
   for (const file of texts) {
     parts.push({
-      type: 'text',
-      text: `<file name="${file.name}" media-type="${file.mediaType}">\n${file.text ?? ''}\n</file>`
-    })
+      type: "text",
+      text: `<file name="${file.name}" media-type="${file.mediaType}">\n${file.text ?? ""}\n</file>`,
+    });
   }
 
   if (canSeeImages) {
     for (const image of images) {
-      const bytes = readAttachment(image)
-      if (bytes) parts.push({ type: 'image', image: bytes, mediaType: image.mediaType })
+      const bytes = readAttachment(image);
+      if (bytes)
+        parts.push({ type: "image", image: bytes, mediaType: image.mediaType });
     }
   } else if (images.length > 0) {
     parts.push({
-      type: 'text',
+      type: "text",
       text:
-        `[${images.length} image${images.length === 1 ? '' : 's'} were attached (${images
+        `[${images.length} image${images.length === 1 ? "" : "s"} were attached (${images
           .map((image) => image.name)
-          .join(', ')}) but this model is not configured to read images, so they were not sent. ` +
-        `Say so rather than guessing at their contents.]`
-    })
+          .join(
+            ", ",
+          )}) but this model is not configured to read images, so they were not sent. ` +
+        `Say so rather than guessing at their contents.]`,
+    });
   }
 
-  parts.push({ type: 'text', text })
-  return { role: 'user', content: parts }
+  parts.push({ type: "text", text });
+  return { role: "user", content: parts };
 }
 
 /**
@@ -504,53 +551,53 @@ export function buildUserMessage(
  * otherwise fill the child's window before its brief arrives. Anything dropped
  * is said, so the subagent knows to read the rest itself.
  */
-const HANDOVER_CHARS = 80_000
+const HANDOVER_CHARS = 80_000;
 
 async function handover(
   runtime: Runtime,
   cwd: string,
   paths: string[] | undefined,
-  notes: string | undefined
+  notes: string | undefined,
 ): Promise<string | undefined> {
-  if ((!paths || paths.length === 0) && !notes) return undefined
+  if ((!paths || paths.length === 0) && !notes) return undefined;
 
-  const parts: string[] = []
-  let budget = HANDOVER_CHARS
-  const skipped: string[] = []
+  const parts: string[] = [];
+  let budget = HANDOVER_CHARS;
+  const skipped: string[] = [];
 
   for (const path of paths ?? []) {
-    const resolved = runtime.resolve(cwd, path)
+    const resolved = runtime.resolve(cwd, path);
     if (budget <= 0) {
-      skipped.push(path)
-      continue
+      skipped.push(path);
+      continue;
     }
     try {
-      const text = await runtime.readFile(resolved)
+      const text = await runtime.readFile(resolved);
       if (text.length > budget) {
-        skipped.push(path)
-        continue
+        skipped.push(path);
+        continue;
       }
-      budget -= text.length
-      parts.push(`<file name="${path}">\n${text}\n</file>`)
+      budget -= text.length;
+      parts.push(`<file name="${path}">\n${text}\n</file>`);
     } catch {
       // A path the lead got wrong is not worth failing the delegation over:
       // the subagent can read it itself, and now it knows to.
-      skipped.push(path)
+      skipped.push(path);
     }
   }
 
-  if (parts.length === 0 && !notes) return undefined
+  if (parts.length === 0 && !notes) return undefined;
 
   return (
     `<handover from="the lead agent">\n` +
     `These were read for you and are current as of now; you do not need to read them again.\n` +
-    (notes ? `\n<notes>\n${notes}\n</notes>\n` : '') +
-    (parts.length > 0 ? `\n${parts.join('\n\n')}\n` : '') +
+    (notes ? `\n<notes>\n${notes}\n</notes>\n` : "") +
+    (parts.length > 0 ? `\n${parts.join("\n\n")}\n` : "") +
     (skipped.length > 0
-      ? `\nNot included (read them yourself if you need them): ${skipped.join(', ')}\n`
-      : '') +
+      ? `\nNot included (read them yourself if you need them): ${skipped.join(", ")}\n`
+      : "") +
     `</handover>\n\n`
-  )
+  );
 }
 
 /**
@@ -562,19 +609,22 @@ async function handover(
  * the wrong specialist doing the work.
  */
 function mentionDirective(config: AppConfig, text: string): string {
-  const agents = Object.values(config.agent)
-  const ids = mentionedAgents(text, agents)
-  if (ids.length === 0) return ''
+  const agents = Object.values(config.agent);
+  const ids = mentionedAgents(text, agents);
+  if (ids.length === 0) return "";
 
   const lines = ids
-    .map((id) => `- ${mentionToken(config.agent[id])} is the agent with id \`${id}\``)
-    .join('\n')
+    .map(
+      (id) =>
+        `- ${mentionToken(config.agent[id])} is the agent with id \`${id}\``,
+    )
+    .join("\n");
 
   return (
     `\n\n<agents-the-user-named>\n${lines}\n` +
     `Hand the work they named to these agents with \`task\`, using those ids.\n` +
     `</agents-the-user-named>`
-  )
+  );
 }
 
 /**
@@ -598,8 +648,8 @@ async function tighten(
   config: AppConfig,
   sessionId: string,
   modelRef: string,
-  measuredTokens: number
-): Promise<{ prefix: 'kept' | 'dehydrated' | 'compacted' }> {
+  measuredTokens: number,
+): Promise<{ prefix: "kept" | "dehydrated" | "compacted" }> {
   /*
    * Leaving the transcript alone is usually the cheaper move.
    *
@@ -621,17 +671,22 @@ async function tighten(
    * The turn's `first=` figure in the log is that measurement — it is what to
    * check if a provider ever stops rewarding this.
    */
-  const budget = budgetFor(config, modelRef)
-  const share = budget > 0 ? measuredTokens / budget : 0
-  const worthIt = share >= (config.dehydrateAtFraction ?? 0.5)
+  const budget = budgetFor(config, modelRef);
+  const share = budget > 0 ? measuredTokens / budget : 0;
+  const worthIt = share >= (config.dehydrateAtFraction ?? 0.5);
   const freed = worthIt
     ? history.dehydrateHistory(sessionId, {
         afterTurns: config.dehydrateAfterTurns,
-        overChars: config.dehydrateOverChars
+        overChars: config.dehydrateOverChars,
       })
-    : { dropped: 0, freedTokens: 0 }
-  const projected = Math.max(0, measuredTokens - freed.freedTokens)
-  const compacted = await compactIfNeeded(config, sessionId, modelRef, projected)
+    : { dropped: 0, freedTokens: 0 };
+  const projected = Math.max(0, measuredTokens - freed.freedTokens);
+  const compacted = await compactIfNeeded(
+    config,
+    sessionId,
+    modelRef,
+    projected,
+  );
 
   /*
    * What the next turn will actually send. Measured while nothing was removed;
@@ -642,10 +697,14 @@ async function tighten(
    */
   store.updateSession(sessionId, {
     contextTokens:
-      compacted || freed.dropped > 0 ? history.estimateTokens(history.getHistory(sessionId)) : projected
-  })
+      compacted || freed.dropped > 0
+        ? history.estimateTokens(history.getHistory(sessionId))
+        : projected,
+  });
 
-  return { prefix: compacted ? 'compacted' : freed.dropped > 0 ? 'dehydrated' : 'kept' }
+  return {
+    prefix: compacted ? "compacted" : freed.dropped > 0 ? "dehydrated" : "kept",
+  };
 }
 
 async function compactIfNeeded(
@@ -653,86 +712,91 @@ async function compactIfNeeded(
   sessionId: string,
   modelRef: string,
   measuredTokens: number,
-  force = false
+  force = false,
 ): Promise<boolean> {
   // A summary is not the work, so it does not go to the model doing the work.
   // Whatever was named for it, or whatever the router says is cheapest and
   // still capable enough to be trusted with it.
   const ref =
     config.smallModel ??
-    pickModel(config, 'delegate', { spent: spentLookup(config) })?.ref ??
-    modelRef
+    pickModel(config, "delegate", { spent: spentLookup(config) })?.ref ??
+    modelRef;
 
   const result = await history.compactHistory(
     sessionId,
     async ({ previous, messages }) => {
-      const resolved = await resolveModel(config, ref)
+      const resolved = await resolveModel(config, ref);
       const answer = await generateText({
         model: resolved.model,
         system:
-          'You are maintaining a running summary of a working session so it can replace the ' +
-          'messages it covers in the model\'s context. Write it for whoever picks the work up ' +
-          'next. Keep: decisions and why, files created or changed with their paths, commands ' +
-          'whose result mattered, facts established about the system, and anything still open. ' +
-          'Drop: greetings, restatements, and tool output that no longer matters. Use short ' +
-          'sections, name things exactly, and never invent a detail that is not there.' +
+          "You are maintaining a running summary of a working session so it can replace the " +
+          "messages it covers in the model's context. Write it for whoever picks the work up " +
+          "next. Keep: decisions and why, files created or changed with their paths, commands " +
+          "whose result mattered, facts established about the system, and anything still open. " +
+          "Drop: greetings, restatements, and tool output that no longer matters. Use short " +
+          "sections, name things exactly, and never invent a detail that is not there." +
           (previous
-            ? ' You are given an existing summary and the messages that came after it. Merge ' +
-              'them into one summary. Everything in the existing summary stays unless the new ' +
-              'messages contradict it — it covers work you can no longer see, so dropping a ' +
-              'fact from it loses that fact for good.'
-            : ''),
+            ? " You are given an existing summary and the messages that came after it. Merge " +
+              "them into one summary. Everything in the existing summary stays unless the new " +
+              "messages contradict it — it covers work you can no longer see, so dropping a " +
+              "fact from it loses that fact for good."
+            : ""),
         prompt:
           // The previous summary goes in whole and unabridged. Passed as just
           // another message it would be truncated like the rest, and it is the
           // one artefact holding the oldest decisions in the session.
-          (previous ? `<existing-summary>\n${previous}\n</existing-summary>\n\n` : '') +
+          (previous
+            ? `<existing-summary>\n${previous}\n</existing-summary>\n\n`
+            : "") +
           `<new-messages>\n${messages
             .map((message) => {
               const content =
-                typeof message.content === 'string'
+                typeof message.content === "string"
                   ? message.content
-                  : JSON.stringify(message.content)
-              return `[${message.role}] ${content.slice(0, 4000)}`
+                  : JSON.stringify(message.content);
+              return `[${message.role}] ${content.slice(0, 4000)}`;
             })
-            .join('\n\n')}\n</new-messages>`
-      })
+            .join("\n\n")}\n</new-messages>`,
+      });
       // Summarising was free in the accounting until now, which it never was
       // in fact. Charged to the session, priced as whichever model did it.
       const used = {
         input: answer.usage.inputTokens ?? 0,
-        output: answer.usage.outputTokens ?? 0
-      }
-      store.creditUsage(sessionId, { ...used, cost: costOf(config, ref, used) ?? 0 })
-      meterRecord(ref, { ...used, cost: costOf(config, ref, used) ?? 0 })
-      return answer.text
+        output: answer.usage.outputTokens ?? 0,
+      };
+      store.creditUsage(sessionId, {
+        ...used,
+        cost: costOf(config, ref, used) ?? 0,
+      });
+      meterRecord(ref, { ...used, cost: costOf(config, ref, used) ?? 0 });
+      return answer.text;
     },
     {
       measuredTokens,
       budgetTokens: budgetFor(config, modelRef),
       fraction: config.compactAtFraction,
       keepRecent: config.keepRecentMessages,
-      force
-    }
-  )
+      force,
+    },
+  );
 
-  if (!result) return false
+  if (!result) return false;
 
   // Said out loud in the transcript, at the point it happened.
   store.addMessage({
     sessionId,
-    role: 'system',
+    role: "system",
     parts: [
       {
-        type: 'text',
+        type: "text",
         text:
           `The ${result.summarised} messages before this were summarised to stay inside the ` +
-          `context window${result.total > result.summarised ? `, ${result.total} in total so far` : ''}.` +
-          `\n\n${result.summary}`
-      }
-    ]
-  })
-  return true
+          `context window${result.total > result.summarised ? `, ${result.total} in total so far` : ""}.` +
+          `\n\n${result.summary}`,
+      },
+    ],
+  });
+  return true;
 }
 
 /**
@@ -742,16 +806,16 @@ async function compactIfNeeded(
  * the hour behind them is dead weight they can see and the app cannot.
  */
 export async function compactNow(sessionId: string): Promise<boolean> {
-  const session = store.getSession(sessionId)
-  if (!session) return false
-  const config = resolvedConfig()
-  const agent = config.agent[session.agentId]
-  const modelRef = agent?.model ?? session.model
-  const done = await compactIfNeeded(config, sessionId, modelRef, 0, true)
+  const session = store.getSession(sessionId);
+  if (!session) return false;
+  const config = resolvedConfig();
+  const agent = config.agent[session.agentId];
+  const modelRef = agent?.model ?? session.model;
+  const done = await compactIfNeeded(config, sessionId, modelRef, 0, true);
   store.updateSession(sessionId, {
-    contextTokens: history.estimateTokens(history.getHistory(sessionId))
-  })
-  return done
+    contextTokens: history.estimateTokens(history.getHistory(sessionId)),
+  });
+  return done;
 }
 
 /**
@@ -762,49 +826,53 @@ export async function compactNow(sessionId: string): Promise<boolean> {
  * when it is gone, once each per period per key — a warning repeated every turn
  * is one nobody reads, and this one costs real money to ignore.
  */
-const allowanceSaid = new Set<string>()
+const allowanceSaid = new Set<string>();
 
 function warnOnAllowance(config: AppConfig, ref: string): void {
-  const slash = ref.indexOf('/')
-  if (slash === -1) return
-  const providerId = ref.slice(0, slash)
-  const model = config.provider?.[providerId]?.models[ref.slice(slash + 1)]
-  if (!model || (model.billing ?? 'pay-as-you-go') !== 'allowance') return
+  const slash = ref.indexOf("/");
+  if (slash === -1) return;
+  const providerId = ref.slice(0, slash);
+  const model = config.provider?.[providerId]?.models[ref.slice(slash + 1)];
+  if (!model || (model.billing ?? "pay-as-you-go") !== "allowance") return;
 
-  const allowance = allowanceFor(config, providerId, model)
-  const spent = spentLookup(config)(ref)
-  const used = allowanceUsed(allowance, spent)
-  if (used === null) return
+  const allowance = allowanceFor(config, providerId, model);
+  const spent = spentLookup(config)(ref);
+  const used = allowanceUsed(allowance, spent);
+  if (used === null) return;
 
-  const stage = used >= 1 ? 'spent' : used > 0.9 ? 'nearly spent' : null
-  if (stage === null) return
-  const key = `${providerId}|${allowance?.period ?? 'month'}|${stage}`
-  if (allowanceSaid.has(key)) return
-  allowanceSaid.add(key)
+  const stage = used >= 1 ? "spent" : used > 0.9 ? "nearly spent" : null;
+  if (stage === null) return;
+  const key = `${providerId}|${allowance?.period ?? "month"}|${stage}`;
+  if (allowanceSaid.has(key)) return;
+  allowanceSaid.add(key);
 
   const of = allowance?.usd
     ? `${formatCost(spent?.cost ?? 0)} of ${formatCost(allowance.usd)}`
-    : `${(spent?.tokens ?? 0).toLocaleString('en-US')} of ${(allowance?.tokens ?? 0).toLocaleString('en-US')} tokens`
-  const period = allowance?.period === 'day' ? 'today' : 'this month'
+    : `${(spent?.tokens ?? 0).toLocaleString("en-US")} of ${(allowance?.tokens ?? 0).toLocaleString("en-US")} tokens`;
+  const period = allowance?.period === "day" ? "today" : "this month";
   const message =
-    stage === 'spent'
+    stage === "spent"
       ? `${providerId}'s included allowance is spent ${period} — ${of} by this app's own count. Anything more is charged at the model's price.`
-      : `${providerId} has used ${Math.round(used * 100)}% of its allowance ${period} — ${of}, counted here.`
+      : `${providerId} has used ${Math.round(used * 100)}% of its allowance ${period} — ${of}, counted here.`;
 
-  logLine('warn', `allowance ${providerId}: ${stage} (${of}, ${period})`)
-  bus.emit({ type: 'toast', level: 'warn', message })
+  logLine("warn", `allowance ${providerId}: ${stage} (${of}, ${period})`);
+  bus.emit({ type: "toast", level: "warn", message });
 }
 
 /**
  * Sessions already told that a switch cannot do what it says, so the
  * transcript says it once instead of at every turn.
  */
-const modeWarned = new Set<string>()
+const modeWarned = new Set<string>();
 
 function sayOnce(sessionId: string, key: string, text: string): void {
-  if (modeWarned.has(key)) return
-  modeWarned.add(key)
-  store.addMessage({ sessionId, role: 'system', parts: [{ type: 'text', text }] })
+  if (modeWarned.has(key)) return;
+  modeWarned.add(key);
+  store.addMessage({
+    sessionId,
+    role: "system",
+    parts: [{ type: "text", text }],
+  });
 }
 
 /**
@@ -819,37 +887,40 @@ function sayOnce(sessionId: string, key: string, text: string): void {
  * not filtered is worse than no note at all.
  */
 async function announceSavingsProblems(input: {
-  config: AppConfig
-  sessionId: string
-  environmentId: string
-  cwd: string
-  modelRef: string
-  savings: Savings
+  config: AppConfig;
+  sessionId: string;
+  environmentId: string;
+  cwd: string;
+  modelRef: string;
+  savings: Savings;
 }): Promise<Savings> {
-  const inForce: Savings = { ...input.savings }
+  const inForce: Savings = { ...input.savings };
 
   if (input.savings.rtk) {
-    const runtime = getRuntime(input.environmentId, input.sessionId)
-    const status = await rtkStatus(input.environmentId, runtime, input.cwd)
-    if (status.state !== 'ready') {
-      inForce.rtk = false
+    const runtime = getRuntime(input.environmentId, input.sessionId);
+    const status = await rtkStatus(input.environmentId, runtime, input.cwd);
+    if (status.state !== "ready") {
+      inForce.rtk = false;
       sayOnce(
         input.sessionId,
         `${input.sessionId}:${input.environmentId}:${status.state}`,
         // The point first: a notice is a divider in the chat, and only its
         // first line is read at a glance.
         `rtk is not available on ${runtime.label} — commands are running unfiltered.\n\n` +
-          `${status.message ?? 'It could not be used on this execution target.'}\n\n` +
+          `${status.message ?? "It could not be used on this execution target."}\n\n` +
           `rtk has to be on the machine whose commands it filters, because it is what runs ` +
           `them — but it does not have to be installed by hand. Open the savings menu beside ` +
           `the composer and choose "Install rtk on ${runtime.id}": it fetches the release for ` +
           `this host into ~/.opendesktop/bin, checks its checksum, and touches nothing else. ` +
-          `Or turn the switch off there if you would rather not be reminded.`
-      )
+          `Or turn the switch off there if you would rather not be reminded.`,
+      );
     }
   }
 
-  if (input.savings.shunt && workerIsTheSameModel(input.config, input.modelRef)) {
+  if (
+    input.savings.shunt &&
+    workerIsTheSameModel(input.config, input.modelRef)
+  ) {
     // Not a failure: the corpus still stays out of the conversation, which is
     // most of the point. But it is not the saving the setting advertises, and
     // a user watching the cost should know which of the two they are getting.
@@ -860,16 +931,16 @@ async function announceSavingsProblems(input: {
         `No cheaper one is declared, so large files still stay out of the conversation — ` +
         `which is where most of the saving is — but the reading is charged at full price.\n\n` +
         `Give another model a lower cost under Settings → Models → Cost, or name one ` +
-        `directly under Savings.`
-    )
+        `directly under Savings.`,
+    );
   }
 
-  return inForce
+  return inForce;
 }
 
 interface TurnInput {
-  sessionId: string
-  userText: string
+  sessionId: string;
+  userText: string;
   /**
    * What the lead already knew, handed to a subagent with its brief: the files
    * it would otherwise have opened, and what the lead learned that is not in
@@ -877,90 +948,175 @@ interface TurnInput {
    * transcript should read as the brief that was given, not as a paste of the
    * repository.
    */
-  handover?: string
-  attachments?: Attachment[]
+  handover?: string;
+  attachments?: Attachment[];
   /** Set for subagent turns so the reply is returned instead of only rendered. */
-  collectFinalText?: boolean
-  depth?: number
-  parentBlockId?: string
+  collectFinalText?: boolean;
+  depth?: number;
+  parentBlockId?: string;
   /** Appended to the system prompt when other agents are working nearby. */
-  coordinationNote?: string
+  coordinationNote?: string;
+  /**
+   * Set when this is the same turn being carried on, after the model ended the
+   * previous attempt without a word.
+   *
+   * Not a new turn from the reader's point of view: nothing is added to the
+   * transcript as a user message, and the answer lands in the message that was
+   * already there. `attempt` counts how many times it has been asked, so a
+   * model that says nothing however often it is asked is eventually left alone.
+   */
+  continuation?: { attempt: number; messageId: string };
+}
+
+/**
+ * How many times a turn that ended without a word is asked to carry on.
+ *
+ * Three, because the failure is usually one empty response rather than a
+ * refusal: a model that has just been handed a dozen tool results sometimes
+ * produces nothing at the step where it should be summing them up, and answers
+ * on the next request. A model that does it three times running is not going to
+ * answer however often it is asked, and the fourth attempt is just money.
+ */
+const SILENT_CONTINUATIONS = 3;
+
+/**
+ * What the model is told when its previous attempt ended without a word.
+ *
+ * A note rather than a user message: nothing was asked again, and a transcript
+ * that shows the same question twice is a transcript that lies about what
+ * happened. Wrapped in a tag so it reads as instruction rather than as
+ * something the person typed.
+ */
+function continuationNote(attempt: number): string {
+  return (
+    `<continue>The last step ended without answering: no text, and nothing left to run, ` +
+    `which stopped the turn. Nothing that was already done is lost. Carry on from where you ` +
+    `are: finish the work if there is work left, then say in plain words what you did, what ` +
+    `you found and anything still open. If something is blocking you, name it. Do not repeat ` +
+    `the plan and do not start over.${
+      attempt > 1
+        ? ` (Attempt ${attempt}: the one before this also ended without a word.)`
+        : ""
+    }</continue>`
+  );
 }
 
 export async function runTurn(input: TurnInput): Promise<string> {
-  const session = store.getSession(input.sessionId)
-  if (!session) throw new Error(`unknown session ${input.sessionId}`)
-  if (controllers.has(session.id)) throw new Error('This session is already running.')
+  const session = store.getSession(input.sessionId);
+  if (!session) throw new Error(`unknown session ${input.sessionId}`);
+  if (controllers.has(session.id))
+    throw new Error("This session is already running.");
 
-  const config = resolvedConfig()
+  const config = resolvedConfig();
   const agent =
     isManager(session.agentId) || !config.agent[session.agentId]
       ? orchestrator(config)
-      : config.agent[session.agentId]
+      : config.agent[session.agentId];
 
   // A pentesting agent runs only in a sandbox. Refused here, plainly, before
   // anything starts: its tools do not exist outside the image, and a security
   // agent loose on the local machine or an SSH host is the opposite of the
   // point. The transcript keeps the ask; the answer is why it will not run.
-  const envKind = config.environment[session.environmentId]?.kind
-  if (agent.sandboxOnly && envKind !== 'container') {
-    store.addMessage({ sessionId: session.id, role: 'user', parts: [{ type: 'text', text: input.userText }] })
+  const envKind = config.environment[session.environmentId]?.kind;
+  if (agent.sandboxOnly && envKind !== "container") {
     store.addMessage({
       sessionId: session.id,
-      role: 'assistant',
+      role: "user",
+      parts: [{ type: "text", text: input.userText }],
+    });
+    store.addMessage({
+      sessionId: session.id,
+      role: "assistant",
       parts: [
         {
-          type: 'error',
+          type: "error",
           text:
             `${agent.name} runs only in a sandbox. This conversation is on "${session.environmentId}", ` +
-            `which is a ${envKind ?? 'non-container'} environment. Start a session on a Sandbox ` +
+            `which is a ${envKind ?? "non-container"} environment. Start a session on a Sandbox ` +
             `environment to use the pentesting agents — they act only inside a throwaway container, ` +
-            `against a target you have authorised.`
-        }
+            `against a target you have authorised.`,
+        },
       ],
-      agentId: agent.id
-    })
-    store.updateSession(session.id, { status: 'idle' })
-    return ''
+      agentId: agent.id,
+    });
+    store.updateSession(session.id, { status: "idle" });
+    return "";
   }
 
-  const controller = new AbortController()
-  controllers.set(session.id, controller)
+  const controller = new AbortController();
+  controllers.set(session.id, controller);
 
+  /*
+   * A continuation is the same conversation, not another question: the model
+   * is told to carry on through a note of its own, and the transcript keeps
+   * the ask the reader actually typed. That is why there is no user message
+   * here and no title to set — only the model's view of the turn changes.
+   */
+  const continuing = input.continuation;
   // The transcript keeps what the user typed; the model gets the skills it named.
-  const expanded = expandSkills(input.userText)
-  const asked = store.addMessage({
-    sessionId: session.id,
-    role: 'user',
-    parts: [{ type: 'text', text: input.userText }],
-    attachments: input.attachments
-  })
-  if (session.title === 'New session' || session.title === 'New task') {
+  const expanded: { prompt: string } = continuing
+    ? { prompt: "" }
+    : expandSkills(input.userText);
+  const asked = continuing
+    ? null
+    : store.addMessage({
+        sessionId: session.id,
+        role: "user",
+        parts: [{ type: "text", text: input.userText }],
+        attachments: input.attachments,
+      });
+  if (
+    !continuing &&
+    (session.title === "New session" || session.title === "New task")
+  ) {
     store.updateSession(session.id, {
-      title: input.userText.replace(/\s+/g, ' ').slice(0, 70) || 'New session'
-    })
+      title: input.userText.replace(/\s+/g, " ").slice(0, 70) || "New session",
+    });
   }
   // A reply is the answer to whatever it was blocked on, so the reason goes.
-  store.updateSession(session.id, { status: 'running', blockedReason: undefined })
+  store.updateSession(session.id, {
+    status: "running",
+    blockedReason: undefined,
+  });
 
-  const assistant: Message = store.addMessage({
-    sessionId: session.id,
-    role: 'assistant',
-    parts: [],
-    agentId: agent.id,
-    model: session.model
-  })
+  /*
+   * On a continuation this is the message the silent attempt already made: the
+   * answer belongs at the end of it, under the blocks it is about, rather than
+   * as a second reply with no question in front of it.
+   */
+  const assistant: Message =
+    (continuing
+      ? store
+          .listMessages(session.id)
+          .find((message) => message.id === continuing.messageId)
+      : undefined) ??
+    store.addMessage({
+      sessionId: session.id,
+      role: "assistant",
+      parts: [],
+      agentId: agent.id,
+      model: session.model,
+    });
 
-  let finalText = ''
+  let finalText = "";
   /*
    * Outside the try, because a turn that fails has still spent everything it
    * spent up to the point it failed. Two agents died mid-turn having used
    * 180,000 input tokens between them, and the session recorded zero.
    */
-  let usedInput = 0
-  let usedOutput = 0
+  let usedInput = 0;
+  let usedOutput = 0;
   /** Set when the provider failed mid-stream, which is not the same as a throw. */
-  let streamFailure: string | null = null
+  let streamFailure: string | null = null;
+  /**
+   * Set when this turn ended without a word and is about to be asked again.
+   *
+   * Declared out here because the `finally` is what starts the next attempt,
+   * and because three things read it: the status (a turn being carried on is
+   * not idle, so nothing is announced as finished), the commit and the hooks
+   * (both belong to the end of a turn, not to an attempt).
+   */
+  let willContinue = false;
 
   /**
    * Armed when the request goes out, cleared by the first thing that comes
@@ -972,7 +1128,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
    * anything — a slow provider is not a broken one — it says so, once, where
    * both the user and whoever reads the log afterwards can see it.
    */
-  let silence: NodeJS.Timeout | null = null
+  let silence: NodeJS.Timeout | null = null;
 
   /**
    * The two ceilings on one turn, and what to say when one of them is hit.
@@ -983,25 +1139,29 @@ export async function runTurn(input: TurnInput): Promise<string> {
    * where it stopped. The wall-clock one exists because tokens are not the only
    * way a turn runs away — a shell command that never returns spends nothing.
    */
-  let budgetStop: string | null = null
-  let clock: NodeJS.Timeout | null = null
-  let budgetWarned = false
-  let budgetSaid = false
-  const startedAt = Date.now()
-  let steps = 0
+  let budgetStop: string | null = null;
+  let clock: NodeJS.Timeout | null = null;
+  let budgetWarned = false;
+  let budgetSaid = false;
+  const startedAt = Date.now();
+  let steps = 0;
 
   const sayBudgetStop = (): void => {
-    if (!budgetStop || budgetSaid) return
-    budgetSaid = true
+    if (!budgetStop || budgetSaid) return;
+    budgetSaid = true;
     // The whole sentence in the transcript, where there is room to read it; a
     // short one on the card, which is a line in a column.
-    store.pushPart(session.id, assistant.id, { type: 'error', text: budgetStop })
+    store.pushPart(session.id, assistant.id, {
+      type: "error",
+      text: budgetStop,
+    });
     store.updateSession(session.id, {
-      status: 'blocked',
-      blockedReason: 'Stopped at its own ceiling — reply to carry on, or raise it under Routing.'
-    })
-    bus.emit({ type: 'toast', level: 'warn', message: budgetStop })
-  }
+      status: "blocked",
+      blockedReason:
+        "Stopped at its own ceiling — reply to carry on, or raise it under Routing.",
+    });
+    bus.emit({ type: "toast", level: "warn", message: budgetStop });
+  };
 
   /*
    * What this turn has already added to the session's running totals.
@@ -1013,9 +1173,9 @@ export async function runTurn(input: TurnInput): Promise<string> {
    * arithmetic stays right however the steps arrive and whatever else spends
    * against this session mid-turn.
    */
-  let creditedInput = 0
-  let creditedOutput = 0
-  let creditedCost = 0
+  let creditedInput = 0;
+  let creditedOutput = 0;
+  let creditedCost = 0;
 
   /*
    * What the provider says it charged for and what it served from a cache.
@@ -1026,11 +1186,11 @@ export async function runTurn(input: TurnInput): Promise<string> {
    * in the log there is no way to tell a cache that is working from one that
    * silently is not, and the difference is an order of magnitude on the bill.
    */
-  let cacheRead = 0
-  let cacheWrite = 0
+  let cacheRead = 0;
+  let cacheWrite = 0;
   /** The first step's numbers, which say whether the prefix carried over. */
-  let firstStepInput = 0
-  let firstStepCacheRead = 0
+  let firstStepInput = 0;
+  let firstStepCacheRead = 0;
 
   /*
    * How much of the turn was spent waiting for tools rather than for the model.
@@ -1042,46 +1202,54 @@ export async function runTurn(input: TurnInput): Promise<string> {
    * as a sum of durations — calls in one step run at the same time, and adding
    * them up would report five seconds of parallel work as fifteen.
    */
-  let toolsRunning = 0
-  let toolsSince = 0
-  let toolsWall = 0
+  let toolsRunning = 0;
+  let toolsSince = 0;
+  let toolsWall = 0;
 
   /** The last moment this turn showed any sign of life. See the quiet guard. */
-  let lastSign = Date.now()
+  let lastSign = Date.now();
 
   const toolStarted = (): void => {
-    if (toolsRunning === 0) toolsSince = Date.now()
-    toolsRunning++
-    lastSign = Date.now()
-  }
+    if (toolsRunning === 0) toolsSince = Date.now();
+    toolsRunning++;
+    lastSign = Date.now();
+  };
   const toolEnded = (): void => {
-    toolsRunning = Math.max(0, toolsRunning - 1)
+    toolsRunning = Math.max(0, toolsRunning - 1);
     if (toolsRunning === 0 && toolsSince > 0) {
-      toolsWall += Date.now() - toolsSince
-      toolsSince = 0
+      toolsWall += Date.now() - toolsSince;
+      toolsSince = 0;
     }
-    lastSign = Date.now()
-  }
+    lastSign = Date.now();
+  };
 
   /** What this turn has actually been charged for, cache reads excluded. */
-  const spent = (): number => Math.max(0, usedInput - cacheRead) + usedOutput
+  const spent = (): number => Math.max(0, usedInput - cacheRead) + usedOutput;
   const cacheShareLabel = (): string =>
-    usedInput > 0 ? `${Math.round((cacheRead / usedInput) * 100)}%` : '0%'
+    usedInput > 0 ? `${Math.round((cacheRead / usedInput) * 100)}%` : "0%";
 
-  const creditSession = (input: number, output: number, cost: number | null): void => {
-    const deltaInput = Math.max(0, input - creditedInput)
-    const deltaOutput = Math.max(0, output - creditedOutput)
-    const deltaCost = Math.max(0, (cost ?? 0) - creditedCost)
-    if (deltaInput === 0 && deltaOutput === 0 && deltaCost === 0) return
-    creditedInput += deltaInput
-    creditedOutput += deltaOutput
-    creditedCost += deltaCost
-    store.creditUsage(session.id, { input: deltaInput, output: deltaOutput, cost: deltaCost })
-  }
+  const creditSession = (
+    input: number,
+    output: number,
+    cost: number | null,
+  ): void => {
+    const deltaInput = Math.max(0, input - creditedInput);
+    const deltaOutput = Math.max(0, output - creditedOutput);
+    const deltaCost = Math.max(0, (cost ?? 0) - creditedCost);
+    if (deltaInput === 0 && deltaOutput === 0 && deltaCost === 0) return;
+    creditedInput += deltaInput;
+    creditedOutput += deltaOutput;
+    creditedCost += deltaCost;
+    store.creditUsage(session.id, {
+      input: deltaInput,
+      output: deltaOutput,
+      cost: deltaCost,
+    });
+  };
 
   try {
-    const runtime = getRuntime(session.environmentId, session.id)
-    await runtime.connect()
+    const runtime = getRuntime(session.environmentId, session.id);
+    await runtime.connect();
     /*
      * The two things a turn needs before it can start are independent of each
      * other: what the target is, which is a round trip to the target, and which
@@ -1090,19 +1258,19 @@ export async function runTurn(input: TurnInput): Promise<string> {
      */
     const [{ platform }, resolved] = await Promise.all([
       describeTarget(session.environmentId, session.id),
-      resolveModel(config, agent.model ?? session.model)
-    ])
+      resolveModel(config, agent.model ?? session.model),
+    ]);
 
-    const modelRef = agent.model ?? session.model
+    const modelRef = agent.model ?? session.model;
     /*
      * Which harness this model gets. Decided from what the model is declared
      * to be, so it follows the model rather than the session: the same agent
      * asked of a frontier model and of the 3B on this machine gets the full brief from
      * one and three lines from the other.
      */
-    const declared = declaredModel(config, modelRef)
-    const slim = needsSlimHarness(declared)
-    const harness = slim ? slimHarness(agent) : agent
+    const declared = declaredModel(config, modelRef);
+    const slim = needsSlimHarness(declared);
+    const harness = slim ? slimHarness(agent) : agent;
 
     /*
      * How hard to try, as the two things it can actually change.
@@ -1120,39 +1288,45 @@ export async function runTurn(input: TurnInput): Promise<string> {
      */
     const servers = (session.mcp ?? [])
       .map((id) => config.mcp?.[id])
-      .filter((server): server is NonNullable<typeof server> => Boolean(server))
+      .filter((server): server is NonNullable<typeof server> =>
+        Boolean(server),
+      );
 
-    const effort = effortLevel(session.effort)
-    const thinks = canReason(declared)
+    const effort = effortLevel(session.effort);
+    const thinks = canReason(declared);
     const reasoning = thinks
       ? reasoningOptions(
-          config.provider[modelRef.slice(0, modelRef.indexOf('/'))]?.npm ?? '',
-          modelRef.slice(0, modelRef.indexOf('/')),
-          effort
+          config.provider[modelRef.slice(0, modelRef.indexOf("/"))]?.npm ?? "",
+          modelRef.slice(0, modelRef.indexOf("/")),
+          effort,
         )
-      : undefined
+      : undefined;
     const stepCeiling = Math.max(
       1,
-      Math.round((slim ? Math.min(config.maxSteps, 12) : config.maxSteps) * effort.steps)
-    )
+      Math.round(
+        (slim ? Math.min(config.maxSteps, 12) : config.maxSteps) * effort.steps,
+      ),
+    );
     // In a sandbox, approvals stay on whatever the session says. Auto-approving
     // an exploit is the opposite of the "explicit supervision" the whole feature
     // is built around, so the container kind overrides the switch.
     const autoApprove =
-      runtime.kind === 'container' ? false : (session.autoApprove ?? config.autoApprove ?? false)
+      runtime.kind === "container"
+        ? false
+        : (session.autoApprove ?? config.autoApprove ?? false);
     const savings = await announceSavingsProblems({
       config,
       sessionId: session.id,
       environmentId: session.environmentId,
       cwd: session.cwd,
       modelRef,
-      savings: savingsOf(config, session)
-    })
+      savings: savingsOf(config, session),
+    });
     const planner = savings.shunt
       ? (config.plannerModel ??
-        pickModel(config, 'plan', { spent: spentLookup(config) })?.ref ??
+        pickModel(config, "plan", { spent: spentLookup(config) })?.ref ??
         null)
-      : null
+      : null;
 
     /*
      * One line when a turn starts and one when it ends.
@@ -1163,26 +1337,26 @@ export async function runTurn(input: TurnInput): Promise<string> {
      * lines per turn is a file you can read a day's work out of.
      */
     logLine(
-      'info',
+      "info",
       `turn ${session.id} start agent=${agent.id} model=${modelRef} env=${session.environmentId}` +
-        `${slim ? ' harness=slim' : ''}${servers.length > 0 ? ` mcp=${servers.map((server) => server.id).join(',')}` : ''}` +
+        `${slim ? " harness=slim" : ""}${servers.length > 0 ? ` mcp=${servers.map((server) => server.id).join(",")}` : ""}` +
         ` effort=${effort.label.toLowerCase()}` +
-        `${reasoning ? `(${effort.reasoning})` : ''} steps<=${stepCeiling}` +
-        `${input.depth ? ` depth=${input.depth}` : ''} cwd=${session.cwd}`
-    )
+        `${reasoning ? `(${effort.reasoning})` : ""} steps<=${stepCeiling}` +
+        `${input.depth ? ` depth=${input.depth}` : ""} cwd=${session.cwd}`,
+    );
 
     /*
      * A history, whatever folder this is: its own, made now rather than when
      * the session was created, or a folder somebody chose that is in no
      * repository yet — so the Changes pane always has something to read.
      */
-    const history_ = await ensureHistory(session.id, session.cwd)
+    const history_ = await ensureHistory(session.id, session.cwd);
     if (history_.created && !isWorkspace(session.cwd)) {
       bus.emit({
-        type: 'toast',
-        level: 'info',
-        message: `Started a git repository in ${session.cwd} — it had none, and now there is a history to compare against.`
-      })
+        type: "toast",
+        level: "info",
+        message: `Started a git repository in ${session.cwd} — it had none, and now there is a history to compare against.`,
+      });
     }
 
     const ctx: ToolContext = {
@@ -1215,7 +1389,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
         description,
         parentBlockId,
         contextPaths,
-        contextNotes
+        contextNotes,
       }) => {
         const child = store.createSession({
           title: description,
@@ -1231,17 +1405,22 @@ export async function runTurn(input: TurnInput): Promise<string> {
           // may be the half of the work that needs them.
           effort: session.effort,
           mcp: session.mcp,
-          parentSessionId: session.id
-        })
-        store.updateSession(child.id, { taskLabel: description })
+          parentSessionId: session.id,
+        });
+        store.updateSession(child.id, { taskLabel: description });
         const report = await runTurn({
           sessionId: child.id,
           userText: prompt,
-          handover: await handover(runtime, session.cwd, contextPaths, contextNotes),
+          handover: await handover(
+            runtime,
+            session.cwd,
+            contextPaths,
+            contextNotes,
+          ),
           collectFinalText: true,
           depth: (input.depth ?? 0) + 1,
-          parentBlockId
-        })
+          parentBlockId,
+        });
         /*
          * What the subagent spent is what this task cost, so it is credited
          * here as well as kept on the subchat. A card that delegated three
@@ -1249,17 +1428,20 @@ export async function runTurn(input: TurnInput): Promise<string> {
          * fifth of the real figure, and wrong in the direction that makes
          * delegating look free.
          */
-        const spent = store.getSession(child.id)?.usage
+        const spent = store.getSession(child.id)?.usage;
         if (spent && (spent.input > 0 || spent.output > 0)) {
           store.creditUsage(session.id, {
             input: spent.input,
             output: spent.output,
-            cost: spent.cost
-          })
+            cost: spent.cost,
+          });
         }
-        return { sessionId: child.id, report: report || '(the subagent returned no text)' }
-      }
-    }
+        return {
+          sessionId: child.id,
+          report: report || "(the subagent returned no text)",
+        };
+      },
+    };
 
     /*
      * ...and whatever this session switched on, which is nothing by default.
@@ -1272,20 +1454,34 @@ export async function runTurn(input: TurnInput): Promise<string> {
      */
     const tools: ToolSet = {
       ...(servers.length > 0 ? await externalTools(ctx, servers) : {}),
-      ...createTools(ctx)
-    }
+      ...createTools(ctx),
+    };
 
+    /*
+     * A continuation says what the previous attempt did not: that it stopped
+     * without a word. It goes to the model only — the visible message is the
+     * one the reader already sent, and repeating it would read as though they
+     * had asked twice.
+     */
+    const lead = continuing
+      ? continuationNote(continuing.attempt)
+      : (input.handover ?? "") +
+        expanded.prompt +
+        mentionDirective(config, input.userText);
     const userMessage = buildUserMessage(
       config,
       session.model,
-      (input.handover ?? '') + expanded.prompt + mentionDirective(config, input.userText),
-      input.attachments
-    )
-    const messages: ModelMessage[] = [...history.getHistory(session.id), userMessage]
+      lead,
+      continuing ? undefined : input.attachments,
+    );
+    const messages: ModelMessage[] = [
+      ...history.getHistory(session.id),
+      userMessage,
+    ];
     // Where this turn begins, recorded before it is appended: rewinding to this
     // message later cuts the model transcript back to exactly here.
-    history.markTurn(session.id, asked.id)
-    history.appendHistory(session.id, [userMessage])
+    if (asked) history.markTurn(session.id, asked.id);
+    history.appendHistory(session.id, [userMessage]);
 
     /*
      * What this request is made of, recorded before it is sent.
@@ -1297,6 +1493,17 @@ export async function runTurn(input: TurnInput): Promise<string> {
      * over, by the same estimator the gauge uses, so the parts add up to the
      * whole rather than to something near it.
      */
+    /*
+     * The repository's own brief, from the target the session is running on.
+     * Read once per turn rather than per step, because a step resends the same
+     * prefix: this is a file read, not a schema, and one is enough.
+     */
+    const brief = await projectBrief(
+      runtime,
+      session.cwd,
+      slim ? SLIM_BRIEF_LIMIT : BRIEF_LIMIT,
+    );
+
     const systemText =
       systemPrompt(harness, {
         cwd: session.cwd,
@@ -1307,16 +1514,43 @@ export async function runTurn(input: TurnInput): Promise<string> {
         platform,
         date: new Date().toISOString().slice(0, 10),
         tools: Object.keys(tools),
-        slim
+        slim,
       }) +
-      (slim ? '' : savingsGuidance(savings, planner === modelRef ? null : planner)) +
-      (input.coordinationNote ?? '')
+      (brief ? briefSection(brief) : "") +
+      (slim
+        ? ""
+        : savingsGuidance(savings, planner === modelRef ? null : planner)) +
+      (input.coordinationNote ?? "");
+
+    /*
+     * Narration, counted rather than hoped for.
+     *
+     * The rules ask for a line at each change of phase, and a model that
+     * follows them needs nothing here. The failure this exists for is the one
+     * already in the store: a turn of 81 tool calls that carried two lines of
+     * text, spent its whole step budget, and ended without answering anything.
+     * Nothing about that turn looked wrong while it ran — the blocks kept
+     * arriving, so the session never went quiet and the quiet guard had nothing
+     * to say. What was missing was the account of itself, and that is not
+     * something a model notices it has stopped doing.
+     *
+     * So: calls since the last thing said are counted, and the step after too
+     * many of them is told, once. Appended at the end of the messages like the
+     * budget note, so the prefix and its cache are untouched, and capped so a
+     * model that ignores it cannot turn the reminder into a loop.
+     */
+    const SILENT_CALLS_BEFORE_NUDGE = 10;
+    const MAX_PROGRESS_NUDGES = 3;
+    let silentCalls = 0;
+    let progressNudges = 0;
 
     const partOfPrefix = {
       messages: history.estimateTokens(messages),
       system: Math.round(systemText.length / 4),
-      ...(expanded.prompt ? { skills: Math.round(expanded.prompt.length / 4) } : {})
-    }
+      ...(expanded.prompt
+        ? { skills: Math.round(expanded.prompt.length / 4) }
+        : {}),
+    };
 
     const result = streamText({
       model: resolved.model,
@@ -1337,7 +1571,9 @@ export async function runTurn(input: TurnInput): Promise<string> {
        * ...except where thinking is on: Anthropic refuses a request that sets
        * both, and it is the thinking that was asked for.
        */
-      temperature: reasoning?.anthropic ? undefined : agent.temperature ?? (slim ? 0.2 : undefined),
+      temperature: reasoning?.anthropic
+        ? undefined
+        : (agent.temperature ?? (slim ? 0.2 : undefined)),
       ...(reasoning ? { providerOptions: reasoning } : {}),
       /*
        * A dozen steps for a small model, sixty for the others.
@@ -1360,25 +1596,44 @@ export async function runTurn(input: TurnInput): Promise<string> {
        * cache — is untouched. The ceiling stays as the backstop it should be.
        */
       prepareStep: ({ messages: soFar, stepNumber }) => {
-        const ceiling = config.maxTurnTokens ?? 0
-        if (ceiling <= 0 || stepNumber === 0) return {}
-        const used = spent()
-        if (used < ceiling * 0.6) return {}
-        const left = Math.max(0, ceiling - used)
+        // The first step is the one the conversation already opened with.
+        if (stepNumber === 0) return {};
+        const notes: string[] = [];
+        const ceiling = config.maxTurnTokens ?? 0;
+        if (ceiling > 0) {
+          const used = spent();
+          if (used >= ceiling * 0.6) {
+            const left = Math.max(0, ceiling - used);
+            notes.push(
+              `<budget>This turn has been charged for ${used.toLocaleString("en-US")} tokens of ` +
+                `the ${ceiling.toLocaleString("en-US")} it may spend; about ` +
+                `${left.toLocaleString("en-US")} are left. Bring what you are doing to a close and ` +
+                `report what you have — findings, what is still open, and what you would do next. ` +
+                `Do not start anything new, and do not re-read what you have already read.</budget>`,
+            );
+          }
+        }
+        if (
+          silentCalls >= SILENT_CALLS_BEFORE_NUDGE &&
+          progressNudges < MAX_PROGRESS_NUDGES
+        ) {
+          const calls = silentCalls;
+          progressNudges++;
+          silentCalls = 0;
+          notes.push(
+            `<progress>That is ${calls} tool calls since you last said anything to the user. ` +
+              `Before the next one, write one short line — what you are doing, or what you have ` +
+              `found — then carry on. A sentence, not a report: the reader has been watching ` +
+              `blocks arrive with no account of what they add up to.</progress>`,
+          );
+        }
+        if (notes.length === 0) return {};
         return {
           messages: [
             ...soFar,
-            {
-              role: 'user',
-              content:
-                `<budget>This turn has been charged for ${used.toLocaleString('en-US')} tokens of ` +
-                `the ${ceiling.toLocaleString('en-US')} it may spend; about ` +
-                `${left.toLocaleString('en-US')} are left. Bring what you are doing to a close and ` +
-                `report what you have — findings, what is still open, and what you would do next. ` +
-                `Do not start anything new, and do not re-read what you have already read.</budget>`
-            }
-          ]
-        }
+            ...notes.map((content) => ({ role: "user" as const, content })),
+          ],
+        };
       },
       // Providers emit text in lumps of wildly varying size — a whole paragraph
       // in one chunk, then three characters. Re-chunking by word at a steady
@@ -1388,8 +1643,8 @@ export async function runTurn(input: TurnInput): Promise<string> {
         ? {
             experimental_transform: smoothStream({
               delayInMs: config.smoothStreamMs ?? 10,
-              chunking: 'word'
-            })
+              chunking: "word",
+            }),
           }
         : {}),
       abortSignal: controller.signal,
@@ -1400,21 +1655,27 @@ export async function runTurn(input: TurnInput): Promise<string> {
         // reports it here and ends the stream. Without remembering it, the
         // turn looked successful — an idle session, a red line in the
         // transcript nobody was told about, and no toast.
-        streamFailure = logError(`stream ${session.id}`, error)
-        store.pushPart(session.id, assistant.id, { type: 'error', text: streamFailure })
-      }
-    })
+        streamFailure = logError(`stream ${session.id}`, error);
+        store.pushPart(session.id, assistant.id, {
+          type: "error",
+          text: streamFailure,
+        });
+      },
+    });
 
-    const wallCeiling = config.maxTurnMs ?? 0
+    const wallCeiling = config.maxTurnMs ?? 0;
     if (wallCeiling > 0) {
       clock = setTimeout(() => {
-        if (budgetStop) return
+        if (budgetStop) return;
         budgetStop =
           `This turn stopped at its time limit: ${Math.round(wallCeiling / 60_000)} minutes ` +
-          `(maxTurnMs). Whatever it had already done stands — reply to carry on.`
-        logLine('warn', `turn ${session.id} hit maxTurnMs after ${Date.now() - startedAt}ms`)
-        controller.abort()
-      }, wallCeiling)
+          `(maxTurnMs). Whatever it had already done stands — reply to carry on.`;
+        logLine(
+          "warn",
+          `turn ${session.id} hit maxTurnMs after ${Date.now() - startedAt}ms`,
+        );
+        controller.abort();
+      }, wallCeiling);
     }
 
     /*
@@ -1435,63 +1696,66 @@ export async function runTurn(input: TurnInput): Promise<string> {
      * Two stages: a warning early, because the usual cause is a provider
      * having a bad minute and knowing is enough; a stop much later.
      */
-    const quietCeiling = config.maxQuietMs ?? 0
-    let warnedQuiet = false
+    const quietCeiling = config.maxQuietMs ?? 0;
+    let warnedQuiet = false;
 
     const onQuiet = (): void => {
-      if (budgetStop) return
-      const quietFor = Date.now() - lastSign
+      if (budgetStop) return;
+      const quietFor = Date.now() - lastSign;
       const verdict = quietVerdict({
         quietForMs: quietFor,
         toolsRunning,
         ceilingMs: quietCeiling,
-        warned: warnedQuiet
-      })
+        warned: warnedQuiet,
+      });
 
-      if (verdict === 'stop') {
+      if (verdict === "stop") {
         budgetStop =
           `This turn stopped after ${Math.round(quietFor / 60_000)} minutes with nothing from ` +
           `${modelRef}: no output, no command running, nothing waiting on you (maxQuietMs). ` +
-          `Whatever it had already done stands — reply to carry on.`
-        logLine('warn', `turn ${session.id} hit maxQuietMs after ${quietFor}ms of silence`)
-        controller.abort()
-        return
+          `Whatever it had already done stands — reply to carry on.`;
+        logLine(
+          "warn",
+          `turn ${session.id} hit maxQuietMs after ${quietFor}ms of silence`,
+        );
+        controller.abort();
+        return;
       }
 
-      if (verdict === 'warn') {
-        warnedQuiet = true
+      if (verdict === "warn") {
+        warnedQuiet = true;
         logLine(
-          'warn',
-          `turn ${session.id} has had nothing from ${modelRef} in ${Math.round(quietFor / 1000)}s; still waiting`
-        )
+          "warn",
+          `turn ${session.id} has had nothing from ${modelRef} in ${Math.round(quietFor / 1000)}s; still waiting`,
+        );
         bus.emit({
-          type: 'toast',
-          level: 'warn',
+          type: "toast",
+          level: "warn",
           message:
             `${modelRef} has sent nothing for ${Math.round(quietFor / 1000)} seconds. The turn is ` +
-            `still open — stop it if you would rather not wait.`
-        })
+            `still open — stop it if you would rather not wait.`,
+        });
       }
-      silence = setTimeout(onQuiet, QUIET_WARN_MS)
-    }
+      silence = setTimeout(onQuiet, QUIET_WARN_MS);
+    };
 
     const alive = (): void => {
-      if (silence) clearTimeout(silence)
-      if (budgetStop) return
-      silence = setTimeout(onQuiet, QUIET_WARN_MS)
-    }
+      if (silence) clearTimeout(silence);
+      if (budgetStop) return;
+      silence = setTimeout(onQuiet, QUIET_WARN_MS);
+    };
 
-    alive()
+    alive();
 
-    let textPartIndex = -1
-    let reasoningPartIndex = -1
+    let textPartIndex = -1;
+    let reasoningPartIndex = -1;
     // Accumulated as each step reports it, so the transcript can show a real
     // count while the turn is still going rather than an estimate from
     // characters. Input is summed across steps because every step resends the
     // conversation, which is what the turn actually costs.
     // The last step's input is the size of the assembled prefix. The sum across
     // steps is what the turn cost; it is not how full the window is.
-    let lastStepInput = 0
+    let lastStepInput = 0;
     /*
      * Where a long turn's tokens actually go.
      *
@@ -1502,39 +1766,58 @@ export async function runTurn(input: TurnInput): Promise<string> {
      * opened and closed at 34k spent it on steps. Both are fixable, and by
      * different means, so the log says which.
      */
-    let firstStepTotal = 0
+    let firstStepTotal = 0;
 
     for await (const part of result.fullStream) {
       // Anything at all counts, including a step boundary: the question is
       // whether the stream is still a stream, not what it carried.
-      lastSign = Date.now()
-      warnedQuiet = false
-      alive()
-      if (controller.signal.aborted) break
+      lastSign = Date.now();
+      warnedQuiet = false;
+      alive();
+      if (controller.signal.aborted) break;
       switch (part.type) {
-        case 'text-delta': {
+        case "text-delta": {
           if (textPartIndex === -1) {
-            textPartIndex = store.pushPart(session.id, assistant.id, { type: 'text', text: '' })
+            textPartIndex = store.pushPart(session.id, assistant.id, {
+              type: "text",
+              text: "",
+            });
           }
-          finalText += part.text
-          store.appendPartText(session.id, assistant.id, textPartIndex, part.text)
-          break
+          finalText += part.text;
+          // Something was actually said, so the silence starts again from here.
+          if (part.text.trim()) silentCalls = 0;
+          store.appendPartText(
+            session.id,
+            assistant.id,
+            textPartIndex,
+            part.text,
+          );
+          break;
         }
-        case 'reasoning-delta': {
+        case "reasoning-delta": {
           if (reasoningPartIndex === -1) {
-            reasoningPartIndex = store.pushPart(session.id, assistant.id, { type: 'reasoning', text: '' })
+            reasoningPartIndex = store.pushPart(session.id, assistant.id, {
+              type: "reasoning",
+              text: "",
+            });
           }
-          store.appendPartText(session.id, assistant.id, reasoningPartIndex, part.text)
-          break
+          store.appendPartText(
+            session.id,
+            assistant.id,
+            reasoningPartIndex,
+            part.text,
+          );
+          break;
         }
-        case 'finish-step': {
-          steps++
-          cacheRead += part.usage.inputTokenDetails?.cacheReadTokens ?? 0
-          cacheWrite += part.usage.inputTokenDetails?.cacheWriteTokens ?? 0
+        case "finish-step": {
+          steps++;
+          cacheRead += part.usage.inputTokenDetails?.cacheReadTokens ?? 0;
+          cacheWrite += part.usage.inputTokenDetails?.cacheWriteTokens ?? 0;
           if (steps === 1) {
-            firstStepInput = part.usage.inputTokens ?? 0
-            firstStepCacheRead = part.usage.inputTokenDetails?.cacheReadTokens ?? 0
-            firstStepTotal = firstStepInput
+            firstStepInput = part.usage.inputTokens ?? 0;
+            firstStepCacheRead =
+              part.usage.inputTokenDetails?.cacheReadTokens ?? 0;
+            firstStepTotal = firstStepInput;
             /*
              * What the prefix was made of, now that the provider has said what
              * the whole of it came to.
@@ -1549,26 +1832,26 @@ export async function runTurn(input: TurnInput): Promise<string> {
              * and looked precise doing it.
              */
             store.updateSession(session.id, {
-              contextParts: { ...partOfPrefix, total: firstStepInput }
-            })
+              contextParts: { ...partOfPrefix, total: firstStepInput },
+            });
           }
-          lastStepInput = part.usage.inputTokens ?? lastStepInput
-          usedInput += part.usage.inputTokens ?? 0
-          usedOutput += part.usage.outputTokens ?? 0
+          lastStepInput = part.usage.inputTokens ?? lastStepInput;
+          usedInput += part.usage.inputTokens ?? 0;
+          usedOutput += part.usage.outputTokens ?? 0;
           const so_far = costOf(config, agent.model ?? session.model, {
             input: usedInput,
             output: usedOutput,
             cacheRead,
-            cacheWrite
-          })
+            cacheWrite,
+          });
           store.updateMessage(session.id, assistant.id, {
             usage: {
               input: usedInput,
               output: usedOutput,
-              ...(so_far === null ? {} : { cost: so_far })
-            }
-          })
-          creditSession(usedInput, usedOutput, so_far)
+              ...(so_far === null ? {} : { cost: so_far }),
+            },
+          });
+          creditSession(usedInput, usedOutput, so_far);
 
           /*
            * What the turn is charged for, not what it resent.
@@ -1580,46 +1863,58 @@ export async function runTurn(input: TurnInput): Promise<string> {
            * for 59,107 of them — 92% of its input was cache. The ceiling exists
            * to end a runaway, and a runaway is measured in what it spends.
            */
-          const ceiling = config.maxTurnTokens ?? 0
-          const spentSoFar = spent()
+          const ceiling = config.maxTurnTokens ?? 0;
+          const spentSoFar = spent();
           if (ceiling > 0 && !budgetStop) {
             if (spentSoFar >= ceiling) {
               budgetStop =
-                `This turn stopped at its ceiling: ${spentSoFar.toLocaleString('en-US')} tokens ` +
-                `charged across ${steps} steps — ${usedInput.toLocaleString('en-US')} sent, ` +
+                `This turn stopped at its ceiling: ${spentSoFar.toLocaleString("en-US")} tokens ` +
+                `charged across ${steps} steps — ${usedInput.toLocaleString("en-US")} sent, ` +
                 `${cacheShareLabel()} of it served from cache — against a limit of ` +
-                `${ceiling.toLocaleString('en-US')} (maxTurnTokens). Nothing is lost: reply to ` +
-                `carry on, or raise the limit under Routing & limits if this is ordinary work here.`
-              logLine('warn', `turn ${session.id} hit maxTurnTokens (${spentSoFar} >= ${ceiling})`)
-              controller.abort()
+                `${ceiling.toLocaleString("en-US")} (maxTurnTokens). Nothing is lost: reply to ` +
+                `carry on, or raise the limit under Routing & limits if this is ordinary work here.`;
+              logLine(
+                "warn",
+                `turn ${session.id} hit maxTurnTokens (${spentSoFar} >= ${ceiling})`,
+              );
+              controller.abort();
             } else if (!budgetWarned && spentSoFar > ceiling * 0.6) {
-              budgetWarned = true
-              logLine('info', `turn ${session.id} past 60% of maxTurnTokens (${spentSoFar}/${ceiling})`)
+              budgetWarned = true;
+              logLine(
+                "info",
+                `turn ${session.id} past 60% of maxTurnTokens (${spentSoFar}/${ceiling})`,
+              );
               bus.emit({
-                type: 'toast',
-                level: 'warn',
+                type: "toast",
+                level: "warn",
                 message:
-                  `This turn has been charged for ${spentSoFar.toLocaleString('en-US')} tokens of ` +
-                  `its ${ceiling.toLocaleString('en-US')} ceiling (${usedInput.toLocaleString('en-US')} ` +
-                  `sent, ${cacheShareLabel()} from cache).`
-              })
+                  `This turn has been charged for ${spentSoFar.toLocaleString("en-US")} tokens of ` +
+                  `its ${ceiling.toLocaleString("en-US")} ceiling (${usedInput.toLocaleString("en-US")} ` +
+                  `sent, ${cacheShareLabel()} from cache).`,
+              });
             }
           }
-          break
+          break;
         }
-        case 'tool-call':
+        case "tool-call":
           // The block is created by the tool itself, which knows its own shape.
           // Resetting the text cursor keeps prose after a tool call in its own bubble.
-          textPartIndex = -1
-          reasoningPartIndex = -1
-          break
-        case 'error': {
-          streamFailure = logError(`stream ${session.id}`, part.error)
-          store.pushPart(session.id, assistant.id, { type: 'error', text: streamFailure })
-          break
+          textPartIndex = -1;
+          reasoningPartIndex = -1;
+          // Counted for the progress note above: parallel calls in one step are
+          // still calls the reader watched go by without being told why.
+          silentCalls++;
+          break;
+        case "error": {
+          streamFailure = logError(`stream ${session.id}`, part.error);
+          store.pushPart(session.id, assistant.id, {
+            type: "error",
+            text: streamFailure,
+          });
+          break;
         }
         default:
-          break
+          break;
       }
     }
 
@@ -1631,121 +1926,165 @@ export async function runTurn(input: TurnInput): Promise<string> {
      * what makes "reply to carry on" mean anything. Said here rather than in
      * the catch because this is the path an abort actually takes.
      */
-    if (budgetStop) sayBudgetStop()
+    if (budgetStop) sayBudgetStop();
 
-    const responseMessages = await result.responseMessages
-    history.appendHistory(session.id, responseMessages as ModelMessage[])
-    const tightened = await tighten(config, session.id, agent.model ?? session.model, lastStepInput)
+    const responseMessages = await result.responseMessages;
+    history.appendHistory(session.id, responseMessages as ModelMessage[]);
+    const tightened = await tighten(
+      config,
+      session.id,
+      agent.model ?? session.model,
+      lastStepInput,
+    );
     // What the next turn's decision reads: did this conversation's prefix
     // survive between turns, or did it arrive as new tokens?
     store.updateSession(session.id, {
-      cacheShare: firstStepInput > 0 ? firstStepCacheRead / firstStepInput : 0
-    })
+      cacheShare: firstStepInput > 0 ? firstStepCacheRead / firstStepInput : 0,
+    });
 
-    const usage = await result.totalUsage
+    const usage = await result.totalUsage;
     /*
      * The per-step counts win when they are larger. A turn that broke halfway
      * reports a total of zero even though ten thousand tokens went out the
      * door, and a turn that is recorded as free is the one somebody is trying
      * to account for.
      */
-    const inputTokens = Math.max(usage.inputTokens ?? 0, usedInput)
-    const outputTokens = Math.max(usage.outputTokens ?? 0, usedOutput)
+    const inputTokens = Math.max(usage.inputTokens ?? 0, usedInput);
+    const outputTokens = Math.max(usage.outputTokens ?? 0, usedOutput);
     // Worked out now and kept on the message: a price edited next week must not
     // change what this turn is recorded as having cost.
     const turnCost = costOf(config, modelRef, {
       input: inputTokens,
       output: outputTokens,
       cacheRead,
-      cacheWrite
-    })
-    meterRecord(modelRef, { input: inputTokens, output: outputTokens, cost: turnCost ?? 0 })
-    warnOnAllowance(config, modelRef)
+      cacheWrite,
+    });
+    meterRecord(modelRef, {
+      input: inputTokens,
+      output: outputTokens,
+      cost: turnCost ?? 0,
+    });
+    warnOnAllowance(config, modelRef);
     store.updateMessage(session.id, assistant.id, {
       completedAt: Date.now(),
       usage: {
         input: inputTokens,
         output: outputTokens,
-        ...(turnCost === null ? {} : { cost: turnCost })
-      }
-    })
+        ...(turnCost === null ? {} : { cost: turnCost }),
+      },
+    });
     // The agent may have handed the task back mid-turn; finishing the turn
     // does not un-block it, so the status it set is left alone.
-    const ended = store.getSession(session.id)
-    // Only the difference. The steps have already been credited, and anything
-    // else that spent against this session mid-turn — a delegated read, a
-    // subagent's report — is in those totals too and must not be overwritten.
-    creditSession(inputTokens, outputTokens, turnCost)
-    store.updateSession(session.id, {
-      status: ended?.status === 'blocked' ? 'blocked' : streamFailure !== null ? 'error' : 'idle'
-    })
     /*
-     * A turn that stops without saying anything says so.
+     * Whether this turn is about to be carried on rather than finished.
      *
-     * The model can end a turn having called tools and produced no text at
-     * all, and the UI then showed a finished message with nothing in it: the
-     * spinner stopped and there was no answer and no error to explain why. A
-     * small local model does this on its first outing, which is how it was
-     * found — but nothing about it is local, and an empty answer is worth a
-     * sentence whoever produced it.
+     * A model can call tools all the way through a turn and then end it with
+     * no text at all: the SDK stops when a step asks for nothing, and an empty
+     * ask looks exactly like a finished one. That used to be answered with a
+     * sentence saying so — a report about the model rather than the work. Asked
+     * again it usually says something, so the turn carries on by itself, and
+     * only a model that stays silent however often it is asked is handed back
+     * to a person.
      */
-    if (
+    const silentEnding =
       textPartIndex === -1 &&
       streamFailure === null &&
       !controller.signal.aborted &&
-      store.getSession(session.id)?.status !== 'blocked' &&
-      !input.collectFinalText
-    ) {
+      store.getSession(session.id)?.status !== "blocked" &&
+      !input.collectFinalText;
+    const attempts = continuing?.attempt ?? 0;
+    willContinue = silentEnding && attempts < SILENT_CONTINUATIONS;
+
+    const ended = store.getSession(session.id);
+    // Only the difference. The steps have already been credited, and anything
+    // else that spent against this session mid-turn — a delegated read, a
+    // subagent's report — is in those totals too and must not be overwritten.
+    creditSession(inputTokens, outputTokens, turnCost);
+    store.updateSession(session.id, {
+      status: willContinue
+        ? // Still running: the next attempt starts in the `finally`, and a
+          // moment of idle here would announce a turn that has not finished.
+          "running"
+        : ended?.status === "blocked"
+          ? "blocked"
+          : streamFailure !== null
+            ? "error"
+            : "idle",
+    });
+    /*
+     * A turn that stops without saying anything, and keeps stopping, says so.
+     *
+     * The UI used to show a finished message with nothing in it: the spinner
+     * stopped and there was no answer and no error to explain why. A small
+     * local model does this on its first outing, which is how it was found —
+     * but nothing about it is local, and an empty answer is worth a sentence
+     * whoever produced it. This is the last resort now, not the first answer.
+     */
+    if (silentEnding && !willContinue) {
       const madeCalls = store
         .listBlocks(session.id)
-        .filter((block) => block.messageId === assistant.id).length
+        .filter((block) => block.messageId === assistant.id).length;
       store.pushPart(session.id, assistant.id, {
-        type: 'text',
+        type: "text",
         text:
           `The model ended the turn without answering` +
-          `${madeCalls > 0 ? `, after ${madeCalls} tool call${madeCalls === 1 ? '' : 's'}` : ''}. ` +
-          `That is it stopping rather than an error — asking again, or in plainer words, usually gets an answer.`
-      })
-      logLine('warn', `turn ${session.id} produced no text after ${steps} steps on ${modelRef}`)
+          `${madeCalls > 0 ? `, after ${madeCalls} tool call${madeCalls === 1 ? "" : "s"}` : ""}` +
+          `, and said nothing when asked to carry on ${SILENT_CONTINUATIONS} more times ` +
+          `to carry on. That is it stopping rather than an error — asking again, or in plainer words, usually gets an answer.`,
+      });
+      logLine(
+        "warn",
+        `turn ${session.id} produced no text after ${steps} steps on ${modelRef}, ` +
+          `and not on ${SILENT_CONTINUATIONS} retries either`,
+      );
     }
 
     logLine(
-      'info',
+      "info",
       `turn ${session.id} done model=${modelRef} steps=${steps} ` +
         `tokens=${inputTokens}/${outputTokens} ` +
         `cache=${cacheRead}r/${cacheWrite}w` +
-        `${inputTokens > 0 ? `(${Math.round((cacheRead / inputTokens) * 100)}%)` : ''} ` +
+        `${inputTokens > 0 ? `(${Math.round((cacheRead / inputTokens) * 100)}%)` : ""} ` +
         `first=${firstStepInput > 0 ? Math.round((firstStepCacheRead / firstStepInput) * 100) : 0}% ` +
         `prefix=${Math.round(firstStepTotal / 1000)}k→${Math.round(lastStepInput / 1000)}k ` +
         `after=${tightened.prefix}` +
-        `${turnCost === null ? '' : ` cost=${turnCost.toFixed(4)}`} ` +
+        `${turnCost === null ? "" : ` cost=${turnCost.toFixed(4)}`} ` +
         `calls=${store.listBlocks(session.id).filter((block) => block.messageId === assistant.id).length} ` +
         `${Date.now() - startedAt}ms(model=${Math.round((Date.now() - startedAt - toolsWall) / 1000)}s ` +
-        `tools=${Math.round(toolsWall / 1000)}s)${streamFailure === null ? '' : ' (stream failed)'}`
-    )
+        `tools=${Math.round(toolsWall / 1000)}s)${streamFailure === null ? "" : " (stream failed)"}`,
+    );
 
     /*
-     * What the turn changed in the conversation's own folder, as one commit.
-     * Its subject is what was asked, which is the only description of the
-     * change anybody wrote.
+     * Both of these belong to the end of a turn, and a turn being carried on
+     * has not ended. Committing here would make two commits with the same
+     * subject, and a `turn` hook — a notification, a sweep, a push — would fire
+     * for work that is still going.
      */
-    if (await commitWorkspace(session.id, session.cwd, input.userText)) {
-      logLine('info', `turn ${session.id} committed its workspace`)
+    if (!willContinue) {
+      /*
+       * What the turn changed in the conversation's own folder, as one commit.
+       * Its subject is what was asked, which is the only description of the
+       * change anybody wrote.
+       */
+      if (await commitWorkspace(session.id, session.cwd, input.userText)) {
+        logLine("info", `turn ${session.id} committed its workspace`);
+      }
+
+      /*
+       * And whatever this session does when a turn ends — a notification, a
+       * commit, a sweep. After the log line, because a hook that takes two
+       * seconds should not make the turn look like it took two seconds longer
+       * than it did.
+       */
+      const ending = await runHooks(config, runtime, {
+        event: "turn",
+        tool: "turn",
+        sessionId: session.id,
+        cwd: session.cwd,
+      });
+      for (const note of ending.notes)
+        logLine("info", `turn ${session.id} hook: ${note.slice(0, 200)}`);
     }
-
-    /*
-     * And whatever this session does when a turn ends — a notification, a
-     * commit, a sweep. After the log line, because a hook that takes two
-     * seconds should not make the turn look like it took two seconds longer
-     * than it did.
-     */
-    const ending = await runHooks(config, runtime, {
-      event: 'turn',
-      tool: 'turn',
-      sessionId: session.id,
-      cwd: session.cwd
-    })
-    for (const note of ending.notes) logLine('info', `turn ${session.id} hook: ${note.slice(0, 200)}`)
 
     /*
      * Told, not left to be noticed. A provider that fails mid-stream used to
@@ -1753,23 +2092,34 @@ export async function runTurn(input: TurnInput): Promise<string> {
      * and the only trace was a line in the transcript that scrolls away.
      */
     if (streamFailure !== null) {
-      logLine('warn', `turn ${session.id} ended on a stream failure after ${inputTokens} in / ${outputTokens} out`)
-      bus.emit({ type: 'toast', level: 'error', message: streamFailure })
+      logLine(
+        "warn",
+        `turn ${session.id} ended on a stream failure after ${inputTokens} in / ${outputTokens} out`,
+      );
+      bus.emit({ type: "toast", level: "error", message: streamFailure });
     }
   } catch (err) {
-    const aborted = isAbort(err, controller.signal.aborted)
+    // Whatever threw, this attempt is over: carrying it on would run a turn
+    // whose failure has already been recorded and reported.
+    willContinue = false;
+    const aborted = isAbort(err, controller.signal.aborted);
     // The whole chain, not the outermost wrapper: "Failed to process
     // successful response" is a sentence about nothing on its own.
-    const message = budgetStop ?? (aborted ? 'Stopped by the user.' : logError(`turn ${session.id}`, err))
+    const message =
+      budgetStop ??
+      (aborted ? "Stopped by the user." : logError(`turn ${session.id}`, err));
     if (budgetStop) {
       // Handed back, not failed: the work is fine, there is just more of it
       // than one turn was allowed to spend.
-      sayBudgetStop()
+      sayBudgetStop();
     } else {
-      store.pushPart(session.id, assistant.id, { type: 'error', text: message })
-      store.setSessionStatus(session.id, aborted ? 'idle' : 'error')
+      store.pushPart(session.id, assistant.id, {
+        type: "error",
+        text: message,
+      });
+      store.setSessionStatus(session.id, aborted ? "idle" : "error");
     }
-    store.updateMessage(session.id, assistant.id, { completedAt: Date.now() })
+    store.updateMessage(session.id, assistant.id, { completedAt: Date.now() });
 
     // Charged for what it used before it broke. The tokens were spent whether
     // or not an answer came back, and a turn that fails is exactly when
@@ -1779,51 +2129,85 @@ export async function runTurn(input: TurnInput): Promise<string> {
         input: usedInput,
         output: usedOutput,
         cacheRead,
-        cacheWrite
-      })
-      creditSession(usedInput, usedOutput, spentCost)
+        cacheWrite,
+      });
+      creditSession(usedInput, usedOutput, spentCost);
       meterRecord(agent.model ?? session.model, {
         input: usedInput,
         output: usedOutput,
-        cost: spentCost ?? 0
-      })
+        cost: spentCost ?? 0,
+      });
       logLine(
-        'warn',
-        `turn ${session.id} ${budgetStop ? 'stopped at its ceiling' : 'failed'} after ` +
+        "warn",
+        `turn ${session.id} ${budgetStop ? "stopped at its ceiling" : "failed"} after ` +
           `${steps} steps, ${usedInput} in / ${usedOutput} out on ${agent.model ?? session.model}, ` +
-          `${Date.now() - startedAt}ms`
-      )
+          `${Date.now() - startedAt}ms`,
+      );
     }
     // The ceiling has already said its piece, through sayBudgetStop.
-    if (!budgetStop && !aborted) bus.emit({ type: 'toast', level: 'error', message })
+    if (!budgetStop && !aborted)
+      bus.emit({ type: "toast", level: "error", message });
   } finally {
-    if (silence) clearTimeout(silence)
-    if (clock) clearTimeout(clock)
-    controllers.delete(session.id)
-    if (store.getSession(session.id)?.status === 'running') store.setSessionStatus(session.id, 'idle')
-    store.flush()
+    if (silence) clearTimeout(silence);
+    if (clock) clearTimeout(clock);
+    controllers.delete(session.id);
+    // A turn being carried on is still running; saying otherwise here would
+    // announce a finish that has not happened, to the notification and to the
+    // sidebar both.
+    if (!willContinue && store.getSession(session.id)?.status === "running")
+      store.setSessionStatus(session.id, "idle");
+    store.flush();
 
-    /*
-     * Whatever was typed while this was running goes now, as its own turn.
-     *
-     * After the controller is released, so the turn it starts is not refused
-     * for the session already running; and not for a subagent, whose parent is
-     * the conversation a person is typing into.
-     */
-    const waiting = store.getSession(session.id)?.queuedFollowUps
-    if (waiting && waiting.length > 0 && (input.depth ?? 0) === 0) {
-      store.updateSession(session.id, { queuedFollowUps: undefined })
-      const text = waiting.join('\n\n')
-      logLine('info', `turn ${session.id} picking up ${waiting.length} queued message(s)`)
+    const waiting = store.getSession(session.id)?.queuedFollowUps;
+    if (willContinue) {
+      /*
+       * The same turn, asked again.
+       *
+       * After the controller is released, because the running-turn guard is
+       * what would otherwise refuse it — and before anything queued, because
+       * what the person typed waits for the answer to the question already
+       * being answered.
+       */
+      const attempt = (input.continuation?.attempt ?? 0) + 1;
+      logLine(
+        "info",
+        `turn ${session.id} ended without a word; asking it to carry on (${attempt}/${SILENT_CONTINUATIONS})`,
+      );
+      /*
+       * Awaited, not fired and forgotten — unlike the queued message below.
+       * This is the same turn continuing, so whoever awaits `runTurn` — the
+       * scheduler marking a card done, a test, the caller that wanted the
+       * answer — waits until it has actually stopped. Voiding it made the turn
+       * look finished while it was still working.
+       */
+      await runTurn({
+        sessionId: session.id,
+        // The original ask, so a commit the continuation makes is still named
+        // after the thing somebody actually asked for.
+        userText: input.userText,
+        depth: input.depth,
+        parentBlockId: input.parentBlockId,
+        coordinationNote: input.coordinationNote,
+        continuation: { attempt, messageId: assistant.id },
+      }).catch(() => {
+        // runTurn records its own failures; nothing to add here.
+      });
+    } else if (waiting && waiting.length > 0 && (input.depth ?? 0) === 0) {
+      store.updateSession(session.id, { queuedFollowUps: undefined });
+      const text = waiting.join("\n\n");
+      logLine(
+        "info",
+        `turn ${session.id} picking up ${waiting.length} queued message(s)`,
+      );
       void runTurn({ sessionId: session.id, userText: text }).catch(() => {
         // runTurn records its own failures; nothing to add here.
-      })
+      });
     }
   }
 
-  return input.collectFinalText ? finalText : ''
+  return input.collectFinalText ? finalText : "";
 }
 
 export function stopAll(): void {
-  for (const id of [...controllers.keys()]) stop(id)
+  for (const id of [...controllers.keys()]) stop(id);
 }

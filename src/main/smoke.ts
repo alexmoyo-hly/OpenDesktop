@@ -335,9 +335,12 @@ function finish(reason: FinishReason, input: number, output: number) {
  * model did the first time it was given the real harness, and what used to
  * leave a finished message with nothing in it.
  */
-function silentModel(command: string): LanguageModel {
+function silentModel(command: string): {
+  model: LanguageModel;
+  calls: () => number;
+} {
   let step = 0;
-  return new MockLanguageModelV4({
+  const model = new MockLanguageModelV4({
     doStream: async () => {
       step++;
       if (step === 1) {
@@ -383,6 +386,88 @@ function silentModel(command: string): LanguageModel {
       };
     },
   }) as unknown as LanguageModel;
+  return { model, calls: () => step };
+}
+
+/**
+ * Calls a tool, says nothing at all, then answers when asked to carry on.
+ *
+ * The shape of the failure this exists for: the turn ends with no text, and
+ * the only thing standing between the reader and an empty message is whether
+ * the turn asks again.
+ */
+function silentThenAnswersModel(
+  command: string,
+  answer: string,
+): { model: LanguageModel; calls: () => number } {
+  let step = 0;
+  const model = new MockLanguageModelV4({
+    doStream: async () => {
+      step++;
+      if (step === 1) {
+        return {
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue({ type: "stream-start", warnings: [] });
+              const input = JSON.stringify({
+                command,
+                description: "look around",
+              });
+              controller.enqueue({
+                type: "tool-input-start",
+                id: "q-1",
+                toolName: "bash",
+              });
+              controller.enqueue({
+                type: "tool-input-delta",
+                id: "q-1",
+                delta: input,
+              });
+              controller.enqueue({ type: "tool-input-end", id: "q-1" });
+              controller.enqueue({
+                type: "tool-call",
+                toolCallId: "q-1",
+                toolName: "bash",
+                input,
+              });
+              controller.enqueue(finish("tool-calls", 10, 5));
+              controller.close();
+            },
+          }),
+        };
+      }
+      if (step === 2) {
+        // The silent ending: nothing said, nothing to run.
+        return {
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue({ type: "stream-start", warnings: [] });
+              controller.enqueue(finish("stop", 8, 0));
+              controller.close();
+            },
+          }),
+        };
+      }
+      return {
+        stream: new ReadableStream({
+          start(controller) {
+            controller.enqueue({ type: "stream-start", warnings: [] });
+            controller.enqueue({
+              type: "response-metadata",
+              id: "s2",
+              modelId: "mock",
+            });
+            controller.enqueue({ type: "text-start", id: "st" });
+            controller.enqueue({ type: "text-delta", id: "st", delta: answer });
+            controller.enqueue({ type: "text-end", id: "st" });
+            controller.enqueue(finish("stop", 6, 4));
+            controller.close();
+          },
+        }),
+      };
+    },
+  }) as unknown as LanguageModel;
+  return { model, calls: () => step };
 }
 
 function scriptedModel(command: string): LanguageModel {
@@ -10965,11 +11050,12 @@ async function main(): Promise<void> {
       autoApprove: true,
     });
     history.clearHistory(quiet.id);
+    const silent = silentModel("printf quiet");
     providers.setModelResolverOverride(() => ({
       providerId: "mock",
       modelId: "mock",
       label: "Mock",
-      model: silentModel("printf quiet"),
+      model: silent.model,
     }));
 
     await runTurn({ sessionId: quiet.id, userText: "have a look" });
@@ -10979,6 +11065,16 @@ async function main(): Promise<void> {
       .filter((part) => part.type === "text")
       .map((part) => part.text ?? "")
       .join(" ");
+    /*
+     * Being asked is the first answer now, not the last: a model that stops
+     * without a word is given the turn again, up to three times, and only a
+     * model that stays silent through all of them reaches this sentence.
+     */
+    check(
+      "a model that will not answer is asked three more times before giving up",
+      silent.calls() === 5,
+      silent.calls(),
+    );
     check(
       "the turn says that it ended without answering",
       /without answering/.test(text),
@@ -10998,9 +11094,67 @@ async function main(): Promise<void> {
       store.getSession(quiet.id)?.status === "idle",
     );
 
+    /*
+     * And the case that matters: one silent ending, then an answer. This is
+     * what used to leave a finished message with nothing in it.
+     */
+    const retried = store.createSession({
+      title: "retried",
+      cwd: process.cwd(),
+      environmentId: "local",
+      agentId: "build",
+      model: "mock/mock",
+      autoApprove: true,
+    });
+    history.clearHistory(retried.id);
+    const answering = silentThenAnswersModel("printf quiet", "It was quiet.");
+    providers.setModelResolverOverride(() => ({
+      providerId: "mock",
+      modelId: "mock",
+      label: "Mock",
+      model: answering.model,
+    }));
+
+    await runTurn({ sessionId: retried.id, userText: "have a look" });
+    const retriedMessages = store.listMessages(retried.id);
+    const spoken = retriedMessages
+      .filter((message) => message.role === "assistant")
+      .flatMap((message) => message.parts)
+      .filter((part) => part.type === "text")
+      .map((part) => part.text ?? "")
+      .join(" ");
+    check(
+      "a model that stops without a word is asked again and answers",
+      spoken.includes("It was quiet."),
+      spoken,
+    );
+    check(
+      "and the turn really was asked again",
+      answering.calls() === 3,
+      answering.calls(),
+    );
+    check(
+      "the answer lands in the message the turn already had, not in a second one",
+      retriedMessages.filter((message) => message.role === "assistant")
+        .length === 1,
+      retriedMessages.map((message) => message.role),
+    );
+    check(
+      "and the note it was asked with is not left in the transcript as if a person wrote it",
+      retriedMessages.filter((message) => message.role === "user").length === 1,
+      retriedMessages.map((message) => message.role),
+    );
+    check(
+      "with nothing said about ending without an answer, because it did not",
+      !/without answering/.test(spoken),
+      spoken,
+    );
+
     providers.setModelResolverOverride(null);
     store.deleteSession(quiet.id);
+    store.deleteSession(retried.id);
     history.clearHistory(quiet.id);
+    history.clearHistory(retried.id);
   }
 
   section("a model that runs on this machine");
