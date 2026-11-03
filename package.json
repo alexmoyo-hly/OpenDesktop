@@ -58,7 +58,8 @@
         }
       ],
       "icon": "build/icon.icns",
-      "identity": null,
+      "identity": "-",
+      "hardenedRuntime": false,
       "darkModeSupport": true
     },
     "npmRebuild": false,

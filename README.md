@@ -39,11 +39,16 @@ quarantined and, being unsigned, will be refused until someone runs
 `xattr -dr com.apple.quarantine /Applications/OpenDesktop.app`. Shipping it properly means a
 Developer ID certificate and notarization.
 
-**Notifications need a signed build on macOS.** An unsigned or development build is refused by
-the system (`UNErrorDomain 1`, not allowed) — measured on `pnpm dev` with Electron 44. The app
-used to say "Sent" anyway; now *Settings → Notifications → Send a test* answers "This system
-refused it" and the log has `notification failed: …`. Until the build is signed, that is the
-expected answer, not a bug in the app.
+**Notifications need a packaged, signed app on macOS.** The system only lets an app that is
+bundled and signed ask for permission. `pnpm dev` runs a bare `Electron.app`, so it is always
+refused (`UNErrorDomain 1`, not allowed). With `identity: null`, electron-builder left a broken
+ad-hoc signature and was refused too. So the build now signs ad-hoc (`"identity": "-"`, with
+`hardenedRuntime: false`, which electron-builder requires for ad-hoc). Measured: the packaged app
+asks for permission, appears in System Settings → Notifications → OpenDesktop, and its
+notifications arrive. Ad-hoc is not Developer ID, so a downloaded `.dmg` still needs the
+quarantine removed and is not notarized. The app used to say "Sent" whatever happened. Now
+*Settings → Notifications → Send a test* answers "This system refused it" when it was refused,
+and the log has `notification failed: …`.
 
 **The environment an app gets from Finder is not your shell's.** An app launched from Finder
 or the Dock inherits launchd's environment, which has none of your exports — so
