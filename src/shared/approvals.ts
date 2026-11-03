@@ -10,12 +10,9 @@ import type { ApprovalRequest } from './types'
 export function approvalQuestion(request: ApprovalRequest, agentName: string): string {
   const who = agentName || 'the agent'
 
-  if (request.tool === 'bash') {
-    // The agent describes its own commands; when it has, that is the clearest
-    // possible phrasing, and when it has not there is still the command below.
-    const what = request.summary?.trim()
-    return what ? `Allow ${who} to ${lowerFirst(what)}?` : `Allow ${who} to run this command?`
-  }
+  // The agent's own label goes on the line beneath (approvalDetail): it is free
+  // text, often not a verb phrase, and "Allow X to negative test of…" reads broken.
+  if (request.tool === 'bash') return `Allow ${who} to run this command?`
 
   // read/write/edit already read as an instruction: "Edit /path", "Create /path".
   const detail = request.detail?.trim()

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import { decide, isGranted, listPending, requestApproval, resolveApproval, splitCommand } from '../src/main/approvals'
+import { approvalDetail, approvalQuestion } from '../src/shared/approvals'
+import { decide, isGranted, listPending, pathsWrittenOutside, requestApproval, resolveApproval, splitCommand } from '../src/main/approvals'
 import { defaultConfig } from '../src/main/config'
 
 async function answerAlways(sessionId: string, tool: string, command?: string): Promise<void> {
@@ -92,4 +93,26 @@ describe('the allowlist only skips the prompt for commands that cannot run or wr
   test('chained commands are split on every separator', () => {
     expect(splitCommand('a && b || c; d | e & f\ng')).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g'])
   })
+})
+
+describe('the approval question reads as a sentence', () => {
+  const ask = (summary?: string) =>
+    ({ id: 'a', sessionId: 's', blockId: 'b', tool: 'bash', title: 'x', detail: 'x', summary, environmentId: 'local', cwd: '/', createdAt: 0 }) as const
+
+  test('a label that is not a verb phrase does not end up spliced into "Allow … to"', () => {
+    expect(approvalQuestion(ask('Negative test of checker and fence parity'), 'Auto')).toBe('Allow Auto to run this command?')
+    expect(approvalDetail(ask('Negative test of checker and fence parity'))).toBe('Negative test of checker and fence parity')
+  })
+})
+
+describe('writes outside the working folder', () => {
+  const cwd = '/work/repo'
+  test('redirections and file commands aimed outside are found; inside, /dev and fd duplications are not', () => {
+    expect(pathsWrittenOutside(cwd, 'bash check.sh > /tmp/neg.out 2>&1', '/home/u')).toEqual(['/tmp/neg.out'])
+    expect(pathsWrittenOutside(cwd, 'mv docs/a.md /tmp/ah.md && echo ok', '/home/u')).toEqual(['/tmp/ah.md'])
+    expect(pathsWrittenOutside(cwd, 'cp a ~/b', '/home/u')).toEqual(['/home/u/b'])
+    expect(pathsWrittenOutside(cwd, 'mv a .tmp/b > out.txt 2>/dev/null', '/home/u')).toEqual([])
+    expect(pathsWrittenOutside(cwd, 'cp /work/repo/a /work/repo/b', '/home/u')).toEqual([])
+  })
+
 })

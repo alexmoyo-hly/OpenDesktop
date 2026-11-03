@@ -3440,11 +3440,11 @@ async function main(): Promise<void> {
       }) as ApprovalRequest;
 
     check(
-      "a command is described in the agent's own words",
+      "a command's question stays a sentence whatever the agent labelled it",
       approvalQuestion(
         ask({ summary: "Run the shuffle script with two seeds" }),
         "Auto",
-      ) === "Allow Auto to run the shuffle script with two seeds?",
+      ) === "Allow Auto to run this command?",
       approvalQuestion(
         ask({ summary: "Run the shuffle script with two seeds" }),
         "Auto",

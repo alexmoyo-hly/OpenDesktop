@@ -363,6 +363,11 @@ export interface AppConfig {
    */
   maxTurnTokens?: number;
   /**
+   * The language every reply is written in, e.g. "Spanish". "The language the
+   * user wrote in" was not enough: DeepSeek narrated in English to Spanish prompts.
+   */
+  language?: string;
+  /**
    * A hard wall on the clock. Off by default, and deliberately: the clock
    * measures how long a turn took, not whether any of it was wasted. Most of
    * a turn's wall time is spent inside tools — a test suite, a download, a
@@ -640,6 +645,8 @@ export interface ApprovalRequest {
   preview?: string;
   /** For a shell call: what "always" is granted against. */
   command?: string;
+  /** Paths the command writes outside the working directory, said on the card. */
+  outside?: string[];
   environmentId: string;
   cwd: string;
   createdAt: number;

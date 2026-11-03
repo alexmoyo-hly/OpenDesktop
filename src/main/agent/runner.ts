@@ -35,7 +35,11 @@ import { isAbort } from "@shared/errors";
 import { budgetFor } from "@shared/context";
 import { effectivePermissions, resolvedConfig } from "../config";
 import { bus } from "../bus";
-import { cancelSessionApprovals, withoutPrompts } from "../approvals";
+import {
+  PermissionDenied,
+  cancelSessionApprovals,
+  withoutPrompts,
+} from "../approvals";
 import { resolveModel } from "../providers";
 import { getRuntime, type Runtime } from "../runtime";
 import { rtkStatus } from "../rtk";
@@ -1573,6 +1577,10 @@ export async function runTurn(input: TurnInput): Promise<string> {
         tools: Object.keys(tools),
         slim,
       }) +
+      (typeof config.language === "string" && config.language.trim()
+        ? `\n\n# Language\nWrite every message to the user in ${config.language.trim()}, ` +
+          `whatever language the files, the tools or these instructions are in.`
+        : "") +
       (brief ? briefSection(brief) : "") +
       (slim
         ? ""
@@ -1607,6 +1615,16 @@ export async function runTurn(input: TurnInput): Promise<string> {
       if (count < LOOP_STOP_AT) return false;
       loopStopped = call.slice(0, 200);
       return true;
+    };
+    let deniedStopped = false;
+    const deniedStop: StopCondition<ToolSet> = ({ steps: done }) => {
+      deniedStopped = (done[done.length - 1]?.content ?? []).some(
+        (part) =>
+          part.type === "tool-error" &&
+          part.error instanceof PermissionDenied &&
+          part.error.endsTurn,
+      );
+      return deniedStopped;
     };
 
     const partOfPrefix = {
@@ -1659,7 +1677,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
        * forty-seven seconds of that into a bounded failure that says what
        * happened, which is the most useful thing it can be.
        */
-      stopWhen: [stepCountIs(stepCeiling), loopStop],
+      stopWhen: [stepCountIs(stepCeiling), loopStop, deniedStop],
       /*
        * Told before it is cut off.
        *
@@ -2095,9 +2113,11 @@ export async function runTurn(input: TurnInput): Promise<string> {
      * only a model that stays silent however often it is asked is handed back
      * to a person.
      */
+    // A turn a person ended with a bare "no" is theirs to carry on, not ours.
     const silentEnding =
       textPartIndex === -1 &&
       streamFailure === null &&
+      !deniedStopped &&
       !controller.signal.aborted &&
       store.getSession(session.id)?.status !== "blocked" &&
       !input.collectFinalText;

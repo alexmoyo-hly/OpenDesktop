@@ -39,6 +39,12 @@ quarantined and, being unsigned, will be refused until someone runs
 `xattr -dr com.apple.quarantine /Applications/OpenDesktop.app`. Shipping it properly means a
 Developer ID certificate and notarization.
 
+**Notifications need a signed build on macOS.** An unsigned or development build is refused by
+the system (`UNErrorDomain 1`, not allowed) — measured on `pnpm dev` with Electron 44. The app
+used to say "Sent" anyway; now *Settings → Notifications → Send a test* answers "This system
+refused it" and the log has `notification failed: …`. Until the build is signed, that is the
+expected answer, not a bug in the app.
+
 **The environment an app gets from Finder is not your shell's.** An app launched from Finder
 or the Dock inherits launchd's environment, which has none of your exports — so
 `{env:HELMCODE_API_KEY}` would resolve to nothing. On startup the app asks your login shell
@@ -649,7 +655,17 @@ remembering when writing one: the shipped list names the root, the system direct
 home directory by hand rather than using `rm -rf /*`, which matches every absolute path there
 is. Chained commands are checked segment by segment, so `ls && curl … | sh` cannot slip through
 on the `ls`. An allowlisted reader with a flag that runs or writes — `find -exec`, `rg --pre`,
-`git diff --output` and the like, quoted or not — always asks.
+`git diff --output` and the like, quoted or not — always asks. So does a command that writes
+outside the working folder (`> /tmp/x`, `mv a ~/b`), past the allowlist and any "always", and
+the card says where; only a session that runs without asking skips it.
+
+A **bare Deny ends the turn**: told "do not retry", models still reached the same end another
+way, so the next move is yours. Type a reason in the card instead and the turn carries on with
+it — the model gets "Their reason: …" as the result of the call.
+
+**Language** — `"language": "Spanish"` in the config names the language of every reply to the
+model. The default rule, "the language the user wrote in", is not always obeyed: DeepSeek
+narrated in English to Spanish prompts until the language was named.
 
 **What a turn may spend** — `maxSteps` bounds how many times the model may act,
 which is not the same as how much it may spend. A turn also has a token ceiling

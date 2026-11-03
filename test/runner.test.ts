@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from 'vitest'
 import { compactNow, isRunning, runTurn, stop } from '../src/main/agent/runner'
 import * as history from '../src/main/history'
 import * as store from '../src/main/store'
+import { rawConfig, saveConfig } from '../src/main/config'
 import { boot, hangingModel, newSession, scriptedModel, useModel, type Captured } from './helpers'
 
 beforeAll(boot)
@@ -166,5 +167,21 @@ describe('system prompt', () => {
     const system = systemOf(seen[0])
     expect(system).not.toMatch(/do not narrate/i)
     expect(system).toMatch(/one\s+short\s+line/i)
+  })
+})
+
+describe('the language the agent writes in', () => {
+  test('a language named in the config is named to the model, not left to "the language they wrote in"', async () => {
+    const before = rawConfig()
+    saveConfig({ ...before, language: 'Spanish' })
+    try {
+      const seen: Captured[] = []
+      useModel(scriptedModel([{ text: 'hola' }], seen))
+      const session = newSession()
+      await runTurn({ sessionId: session.id, userText: 'hello' })
+      expect(systemOf(seen[0])).toContain('Write every message to the user in Spanish')
+    } finally {
+      saveConfig(before)
+    }
   })
 })

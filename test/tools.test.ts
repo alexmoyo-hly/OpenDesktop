@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { beforeAll, describe, expect, test } from 'vitest'
 import { NOTHING } from '@shared/savings'
 import { createTools, type ToolContext } from '../src/main/agent/tools'
-import { listPending, resolveApproval } from '../src/main/approvals'
+import { grantForSession, listPending, resolveApproval } from '../src/main/approvals'
 import { loadConfig } from '../src/main/config'
 import { getRuntime, type Runtime } from '../src/main/runtime'
 import { boot, newSession, tempDir } from './helpers'
@@ -81,5 +81,33 @@ describe('tool set', () => {
   test('a sandbox session has no fetch: it would run on the host, outside the container firewall', () => {
     const container = { ...getRuntime('local'), kind: 'container' } as Runtime
     expect(Object.keys(createTools(context(container)))).not.toContain('fetch')
+  })
+})
+
+describe('bash writing outside the working directory', () => {
+  async function bash(command: string, ctx: ToolContext): Promise<'asked' | 'ran'> {
+    const tools = createTools(ctx)
+    const running = (tools.bash.execute as (input: unknown, options: unknown) => Promise<unknown>)(
+      { command, description: 'test' },
+      { toolCallId: 'b', messages: [] }
+    ).catch(() => undefined)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const asked = listPending().find((request) => request.sessionId === ctx.sessionId)
+    if (asked) {
+      resolveApproval(asked.id, 'reject')
+      await running
+      return 'asked'
+    }
+    await running
+    return 'ran'
+  }
+
+  test('an "always" for a program does not cover sending its output out of the folder', async () => {
+    const session = newSession({ autoApprove: false })
+    const ctx = { ...context(getRuntime('local')), sessionId: session.id, cwd: session.cwd }
+    grantForSession(session.id, 'bash:touch')
+    expect(await bash('touch inside.txt', ctx)).toBe('ran')
+    const outside = join(tempDir('od-outside-'), 'x.txt')
+    expect(await bash(`touch ${outside}`, ctx)).toBe('asked')
   })
 })

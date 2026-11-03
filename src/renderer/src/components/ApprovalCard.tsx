@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { ApprovalRequest } from '@shared/types'
 import { approvalDetail, approvalQuestion } from '@shared/approvals'
 import { useStore } from '../state/store'
@@ -65,8 +65,10 @@ export function ApprovalCard({
   const session = sessions.find((candidate) => candidate.id === request.sessionId)
   const agentName = (session && config?.agent[session.agentId]?.name) || 'the agent'
 
+  // A "no" with a reason lets the turn carry on with it; a bare "no" ends the turn.
+  const [reason, setReason] = useState('')
   const answer = (value: Answer): void => {
-    void window.opendesktop.approvals.resolve(request.id, value)
+    void window.opendesktop.approvals.resolve(request.id, value, value === 'reject' ? reason.trim() || undefined : undefined)
   }
 
   // Only the request at the front of the queue listens, so a second one
@@ -108,6 +110,11 @@ export function ApprovalCard({
         <div className="text-ink-400 mt-1.5 text-[13px] leading-[1.5]">
           {approvalDetail(request)}
         </div>
+        {request.outside?.length ? (
+          <div className="text-bad mt-1.5 text-[12.5px] leading-[1.5]">
+            Writes outside the working folder: {request.outside.join(', ')}
+          </div>
+        ) : null}
       </div>
 
       <div className="px-4 pt-3">
@@ -134,6 +141,22 @@ export function ApprovalCard({
             </pre>
           )}
         </div>
+      </div>
+
+      <div className="px-4 pt-3">
+        <input
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && reason.trim()) {
+              event.preventDefault()
+              answer('reject')
+            }
+          }}
+          placeholder="Deny and tell it what to do instead (optional, Enter)"
+          aria-label="Reason for denying"
+          className="bg-ink-850 text-ink-200 placeholder:text-ink-600 w-full rounded-lg px-3 py-1.5 text-[12.5px] outline-none"
+        />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 px-4 py-3">

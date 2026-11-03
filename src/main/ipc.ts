@@ -896,8 +896,14 @@ export function registerIpc(): void {
 
   /* ---------- approvals ---------- */
   ipcMain.handle("approval:list", () => listPending());
-  ipcMain.handle("approval:resolve", (_e, id: string, answer: ApprovalAnswer) =>
-    resolveApproval(id, answer),
+  ipcMain.handle(
+    "approval:resolve",
+    (_e, id: string, answer: ApprovalAnswer, note?: unknown) =>
+      resolveApproval(
+        id,
+        answer,
+        typeof note === "string" ? note.slice(0, 2000) : undefined,
+      ),
   );
 
   /* ---------- activity ---------- */

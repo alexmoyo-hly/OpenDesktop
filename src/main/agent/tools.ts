@@ -1,9 +1,10 @@
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import { basename, relative } from 'node:path'
+import { homedir } from 'node:os'
 import type { AgentConfig, AppConfig, Block, Permissions } from '@shared/types'
 import { type Savings } from '@shared/savings'
-import { PermissionDenied, decide, isGranted, requestApproval } from '../approvals'
+import { PermissionDenied, decide, isGranted, pathsWrittenOutside, requestApproval } from '../approvals'
 import { diffStats, renderDiff } from '../diff'
 import { shellQuote, type Runtime } from '../runtime'
 import {
@@ -80,6 +81,11 @@ function truncate(text: string, limit = MAX_TOOL_OUTPUT): string {
   return `${head}\n\n[... ${text.length - head.length - tail.length} characters truncated ...]\n\n${tail}`
 }
 
+// Elsewhere than this machine the remote home is unknown; "~" then counts as outside.
+function outsideWrites(ctx: ToolContext, command: string): string[] {
+  return pathsWrittenOutside(ctx.cwd, command, ctx.runtime.kind === 'local' ? homedir() : '~')
+}
+
 function isOutside(cwd: string, path: string): boolean {
   const rel = relative(cwd, path)
   return rel.startsWith('..') || rel.startsWith('/')
@@ -99,6 +105,8 @@ interface PermissionSpec {
   forceAsk?: boolean
   /** A target outside the working directory: an `allow` becomes an `ask` unless the session auto-approves. */
   outsideCwd?: boolean
+  /** Paths a command writes outside the working directory: asks even past the allowlist and "always". */
+  writesOutside?: string[]
 }
 
 /**
@@ -123,17 +131,18 @@ async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpe
     throw new PermissionDenied(spec.detail, decision.deniedBy ?? `${spec.key} is set to deny`)
   }
 
-  const mode = spec.outsideCwd && decision.mode === 'allow' && !ctx.autoApprove ? 'ask' : decision.mode
+  const outsideWrite = (spec.writesOutside?.length ?? 0) > 0 && !ctx.autoApprove
+  const mode = (spec.outsideCwd || outsideWrite) && decision.mode === 'allow' && !ctx.autoApprove ? 'ask' : decision.mode
   const needsAsk =
     mode === 'ask' &&
-    (!decision.preapproved || spec.forceAsk === true) &&
-    !isGranted(ctx.sessionId, block.tool, spec.command)
+    (outsideWrite ||
+      ((!decision.preapproved || spec.forceAsk === true) && !isGranted(ctx.sessionId, block.tool, spec.command)))
   if (!needsAsk) return
 
   const was = store.getBlock(ctx.sessionId, block.id)?.status
   store.updateBlock(ctx.sessionId, block.id, { status: 'awaiting-approval' })
   store.setSessionStatus(ctx.sessionId, 'awaiting-approval')
-  const answer = await requestApproval({
+  const { answer, note } = await requestApproval({
     sessionId: ctx.sessionId,
     blockId: block.id,
     tool: block.tool,
@@ -142,6 +151,7 @@ async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpe
     summary: block.subtitle,
     preview: spec.preview,
     command: spec.command,
+    ...(outsideWrite ? { outside: spec.writesOutside } : {}),
     environmentId: ctx.environmentId,
     cwd: ctx.cwd
   })
@@ -149,10 +159,10 @@ async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpe
   if (answer === 'reject') {
     store.updateBlock(ctx.sessionId, block.id, {
       status: 'canceled',
-      error: 'Rejected by the user',
+      error: note ? `Rejected by the user: ${note}` : 'Rejected by the user',
       endedAt: Date.now()
     })
-    throw new PermissionDenied(spec.detail)
+    throw new PermissionDenied(spec.detail, undefined, note)
   }
   store.updateBlock(ctx.sessionId, block.id, { status: was ?? 'running' })
 }
@@ -393,7 +403,7 @@ export function createTools(ctx: ToolContext): ToolSet {
               title: command,
               subtitle: `${description} · background`,
               input: { command, description, run_in_background: true },
-              permission: { key: 'bash', command, detail: command, preview: command }
+              permission: { key: 'bash', command, detail: command, preview: command, writesOutside: outsideWrites(ctx, command) }
             },
             async (block) => {
               const task = startBackgroundTask({
@@ -478,7 +488,8 @@ export function createTools(ctx: ToolContext): ToolSet {
               command,
               detail: command,
               preview: command,
-              forceAsk: rewrite?.forceAsk
+              forceAsk: rewrite?.forceAsk,
+              writesOutside: outsideWrites(ctx, command)
             }
           },
           async (block) => {
