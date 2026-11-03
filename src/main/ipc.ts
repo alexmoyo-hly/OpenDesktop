@@ -577,6 +577,14 @@ export function registerIpc(): void {
     history.clearHistory(id);
     return store.updateSession(id, {});
   });
+  /**
+   * The composer's unsent text, kept on the conversation it was typed into.
+   * Its own channel rather than `session:update`, because writing a draft must
+   * not touch `updatedAt` — see `setSessionDraft`.
+   */
+  ipcMain.handle("session:draft", (_e, id: string, text: string) =>
+    store.setSessionDraft(id, text),
+  );
   ipcMain.handle(
     "session:fork",
     (_e, id: string, target?: { boardId?: string; columnId?: string }) => {

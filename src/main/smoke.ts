@@ -7029,6 +7029,39 @@ async function main(): Promise<void> {
       ).session.queuedFollowUps.length === 2,
     );
 
+    /*
+     * What is typed into a composer and not sent yet. It belongs to the
+     * conversation, and the two things that can go wrong are that it is not
+     * kept, and that keeping it makes the session look as though something
+     * happened in it — `updatedAt` is what the sidebar sorts by, and a draft
+     * written on every pause in typing would reorder the list under a hand
+     * that is doing something else.
+     */
+    const draftBefore = store.getSession(talking.id)?.updatedAt;
+    store.setSessionDraft(talking.id, "half a thought");
+    check(
+      "an unsent message is kept on the conversation it was typed in",
+      store.getSession(talking.id)?.draft === "half a thought",
+      store.getSession(talking.id)?.draft,
+    );
+    check(
+      "and writing it does not make the conversation jump to the top of the list",
+      store.getSession(talking.id)?.updatedAt === draftBefore,
+    );
+    store.flush();
+    check(
+      "a draft is on disk, so closing the app does not eat it",
+      JSON.parse(
+        readFileSync(join(DATA_DIR, "sessions", `${talking.id}.json`), "utf8"),
+      ).session.draft === "half a thought",
+    );
+    store.setSessionDraft(talking.id, "");
+    check(
+      "sending it clears the field rather than leaving an empty string behind",
+      store.getSession(talking.id)?.draft === undefined,
+      store.getSession(talking.id)?.draft,
+    );
+
     providers.setModelResolverOverride(() => ({
       providerId: "mock",
       modelId: "mock",

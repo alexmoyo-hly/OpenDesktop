@@ -518,6 +518,14 @@ export interface Session {
    * "this one stays quiet" is being decided.
    */
   notify?: SessionNotify;
+  /**
+   * What is typed in this conversation's composer but not sent yet.
+   *
+   * Per conversation rather than one text for the window, because changing
+   * chat — or opening the board, which unmounts the chat — used to throw away
+   * a half-written message. Kept on the session so it also survives a restart.
+   */
+  draft?: string;
   status: SessionStatus;
   createdAt: number;
   updatedAt: number;

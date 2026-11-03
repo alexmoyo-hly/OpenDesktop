@@ -225,6 +225,9 @@ const api = {
       ipcRenderer.invoke("session:delete", id),
     clear: (id: string): Promise<Session | undefined> =>
       ipcRenderer.invoke("session:clear", id),
+    /** What is typed but not sent, kept per conversation so it is not lost. */
+    setDraft: (id: string, text: string): Promise<void> =>
+      ipcRenderer.invoke("session:draft", id, text),
     fork: (
       id: string,
       target?: { boardId?: string; columnId?: string },

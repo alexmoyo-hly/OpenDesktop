@@ -1,71 +1,97 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { nanoid } from 'nanoid'
-import type { Block, Message, MessagePart, Session, SessionStatus } from '@shared/types'
-import { DATA_DIR } from './config'
-import { copyHistory } from './history'
-import type { Savings } from '@shared/savings'
-import { bus } from './bus'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
+import { nanoid } from "nanoid";
+import type {
+  Block,
+  Message,
+  MessagePart,
+  Session,
+  SessionStatus,
+} from "@shared/types";
+import { DATA_DIR } from "./config";
+import { copyHistory } from "./history";
+import type { Savings } from "@shared/savings";
+import { bus } from "./bus";
 
-const SESSIONS_DIR = join(DATA_DIR, 'sessions')
-const INDEX_PATH = join(DATA_DIR, 'index.json')
+const SESSIONS_DIR = join(DATA_DIR, "sessions");
+const INDEX_PATH = join(DATA_DIR, "index.json");
 
 interface SessionFile {
-  session: Session
-  messages: Message[]
-  blocks: Block[]
+  session: Session;
+  messages: Message[];
+  blocks: Block[];
 }
 
-const sessions = new Map<string, SessionFile>()
-const dirty = new Set<string>()
-let flushTimer: NodeJS.Timeout | null = null
+const sessions = new Map<string, SessionFile>();
+const dirty = new Set<string>();
+let flushTimer: NodeJS.Timeout | null = null;
 
 function ensureDirs(): void {
-  mkdirSync(SESSIONS_DIR, { recursive: true })
+  mkdirSync(SESSIONS_DIR, { recursive: true });
 }
 
 function markDirty(id: string): void {
-  dirty.add(id)
-  if (flushTimer) return
+  dirty.add(id);
+  if (flushTimer) return;
   flushTimer = setTimeout(() => {
-    flushTimer = null
-    flush()
-  }, 400)
+    flushTimer = null;
+    flush();
+  }, 400);
 }
 
 export function flush(): void {
-  ensureDirs()
+  ensureDirs();
   for (const id of dirty) {
-    const file = sessions.get(id)
-    if (!file) continue
-    writeFileSync(join(SESSIONS_DIR, `${id}.json`), JSON.stringify(file), 'utf8')
+    const file = sessions.get(id);
+    if (!file) continue;
+    writeFileSync(
+      join(SESSIONS_DIR, `${id}.json`),
+      JSON.stringify(file),
+      "utf8",
+    );
   }
-  dirty.clear()
+  dirty.clear();
   writeFileSync(
     INDEX_PATH,
     JSON.stringify({ order: [...sessions.keys()], version: 1 }, null, 2),
-    'utf8'
-  )
+    "utf8",
+  );
 }
 
 export function loadStore(): void {
-  ensureDirs()
-  if (!existsSync(SESSIONS_DIR)) return
+  ensureDirs();
+  if (!existsSync(SESSIONS_DIR)) return;
   for (const name of readdirSync(SESSIONS_DIR)) {
-    if (!name.endsWith('.json')) continue
+    if (!name.endsWith(".json")) continue;
     try {
-      const file = JSON.parse(readFileSync(join(SESSIONS_DIR, name), 'utf8')) as SessionFile
+      const file = JSON.parse(
+        readFileSync(join(SESSIONS_DIR, name), "utf8"),
+      ) as SessionFile;
       // Anything left mid-flight from a previous run is no longer running.
-      if (file.session.status === 'running' || file.session.status === 'awaiting-approval') {
-        file.session.status = 'idle'
+      if (
+        file.session.status === "running" ||
+        file.session.status === "awaiting-approval"
+      ) {
+        file.session.status = "idle";
       }
       for (const block of file.blocks) {
-        if (block.status === 'running' || block.status === 'pending' || block.status === 'awaiting-approval') {
-          block.status = 'canceled'
-          block.endedAt = block.endedAt ?? Date.now()
+        if (
+          block.status === "running" ||
+          block.status === "pending" ||
+          block.status === "awaiting-approval"
+        ) {
+          block.status = "canceled";
+          block.endedAt = block.endedAt ?? Date.now();
         }
       }
-      sessions.set(file.session.id, file)
+      sessions.set(file.session.id, file);
     } catch {
       /* skip corrupt session file */
     }
@@ -75,31 +101,33 @@ export function loadStore(): void {
 /* ---------------- sessions ---------------- */
 
 export function listSessions(): Session[] {
-  return [...sessions.values()].map((f) => f.session).sort((a, b) => b.updatedAt - a.updatedAt)
+  return [...sessions.values()]
+    .map((f) => f.session)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export function getSession(id: string): Session | undefined {
-  return sessions.get(id)?.session
+  return sessions.get(id)?.session;
 }
 
 export function createSession(input: {
-  title?: string
-  cwd: string
-  environmentId: string
-  agentId: string
-  model: string
-  savings?: Partial<Savings>
-  autoApprove?: boolean
+  title?: string;
+  cwd: string;
+  environmentId: string;
+  agentId: string;
+  model: string;
+  savings?: Partial<Savings>;
+  autoApprove?: boolean;
   /** How hard to try, 1 to 5. Unset means the middle. */
-  effort?: number
+  effort?: number;
   /** Ids of the tool servers this session carries. */
-  mcp?: string[]
-  parentSessionId?: string
+  mcp?: string[];
+  parentSessionId?: string;
 }): Session {
-  const now = Date.now()
+  const now = Date.now();
   const session: Session = {
     id: nanoid(12),
-    title: input.title ?? 'New session',
+    title: input.title ?? "New session",
     cwd: input.cwd,
     environmentId: input.environmentId,
     agentId: input.agentId,
@@ -108,25 +136,28 @@ export function createSession(input: {
     autoApprove: input.autoApprove,
     effort: input.effort,
     mcp: input.mcp,
-    status: 'idle',
+    status: "idle",
     createdAt: now,
     updatedAt: now,
     usage: { input: 0, output: 0, cost: 0 },
-    parentSessionId: input.parentSessionId
-  }
-  sessions.set(session.id, { session, messages: [], blocks: [] })
-  markDirty(session.id)
-  bus.emit({ type: 'session.created', session })
-  return session
+    parentSessionId: input.parentSessionId,
+  };
+  sessions.set(session.id, { session, messages: [], blocks: [] });
+  markDirty(session.id);
+  bus.emit({ type: "session.created", session });
+  return session;
 }
 
-export function updateSession(id: string, patch: Partial<Session>): Session | undefined {
-  const file = sessions.get(id)
-  if (!file) return undefined
-  Object.assign(file.session, patch, { updatedAt: Date.now() })
-  markDirty(id)
-  bus.emit({ type: 'session.updated', session: file.session })
-  return file.session
+export function updateSession(
+  id: string,
+  patch: Partial<Session>,
+): Session | undefined {
+  const file = sessions.get(id);
+  if (!file) return undefined;
+  Object.assign(file.session, patch, { updatedAt: Date.now() });
+  markDirty(id);
+  bus.emit({ type: "session.updated", session: file.session });
+  return file.session;
 }
 
 /**
@@ -139,39 +170,60 @@ export function updateSession(id: string, patch: Partial<Session>): Session | un
  */
 export function creditUsage(
   id: string,
-  usage: { input: number; output: number; cost?: number }
+  usage: { input: number; output: number; cost?: number },
 ): void {
-  const file = sessions.get(id)
-  if (!file) return
+  const file = sessions.get(id);
+  if (!file) return;
   updateSession(id, {
     usage: {
       input: file.session.usage.input + usage.input,
       output: file.session.usage.output + usage.output,
-      cost: file.session.usage.cost + (usage.cost ?? 0)
-    }
-  })
+      cost: file.session.usage.cost + (usage.cost ?? 0),
+    },
+  });
 }
 
 export function setSessionStatus(id: string, status: SessionStatus): void {
-  updateSession(id, { status })
+  updateSession(id, { status });
+}
+
+/**
+ * What is typed in a conversation but not sent yet.
+ *
+ * Not `updateSession`, and that is the whole point: that one stamps
+ * `updatedAt`, which is what the sidebar sorts by. A draft written on every
+ * pause in typing would make the conversation jump to the top of the list
+ * while it is being typed into — and reorder the list under a hand that is
+ * doing something else. It still emits, so the document the renderer holds
+ * stays the same document, and it still marks dirty, so a draft survives a
+ * quit.
+ */
+export function setSessionDraft(id: string, draft: string): void {
+  const file = sessions.get(id);
+  if (!file) return;
+  if (file.session.draft === draft) return;
+  if (draft) file.session.draft = draft;
+  else delete file.session.draft;
+  markDirty(id);
+  bus.emit({ type: "session.updated", session: file.session });
 }
 
 /** Every session spawned by this one, however deep. */
 export function descendantsOf(id: string): Session[] {
-  const out: Session[] = []
-  const queue = [id]
-  const seen = new Set<string>([id])
+  const out: Session[] = [];
+  const queue = [id];
+  const seen = new Set<string>([id]);
   while (queue.length > 0) {
-    const current = queue.shift()!
+    const current = queue.shift()!;
     for (const file of sessions.values()) {
-      const child = file.session
-      if (child.parentSessionId !== current || seen.has(child.id)) continue
-      seen.add(child.id)
-      out.push(child)
-      queue.push(child.id)
+      const child = file.session;
+      if (child.parentSessionId !== current || seen.has(child.id)) continue;
+      seen.add(child.id);
+      out.push(child);
+      queue.push(child.id);
     }
   }
-  return out
+  return out;
 }
 
 /**
@@ -191,37 +243,45 @@ export function descendantsOf(id: string): Session[] {
  */
 export function forkSession(
   id: string,
-  overrides?: { title?: string; boardId?: string; columnId?: string; standalone?: boolean }
+  overrides?: {
+    title?: string;
+    boardId?: string;
+    columnId?: string;
+    standalone?: boolean;
+  },
 ): Session | undefined {
-  const root = sessions.get(id)
-  if (!root) return undefined
+  const root = sessions.get(id);
+  if (!root) return undefined;
 
-  const originals = [root.session, ...descendantsOf(id)]
-  const now = Date.now()
+  const originals = [root.session, ...descendantsOf(id)];
+  const now = Date.now();
 
   // Every id is minted first, so a reference can be remapped whichever order
   // the sessions are copied in.
-  const sessionIds = new Map<string, string>()
-  for (const original of originals) sessionIds.set(original.id, nanoid(12))
+  const sessionIds = new Map<string, string>();
+  for (const original of originals) sessionIds.set(original.id, nanoid(12));
 
-  const blockIds = new Map<string, string>()
+  const blockIds = new Map<string, string>();
   for (const original of originals) {
-    for (const block of sessions.get(original.id)?.blocks ?? []) blockIds.set(block.id, nanoid(12))
+    for (const block of sessions.get(original.id)?.blocks ?? [])
+      blockIds.set(block.id, nanoid(12));
   }
 
-  const created: Session[] = []
+  const created: Session[] = [];
 
   for (const original of originals) {
-    const file = sessions.get(original.id)
-    if (!file) continue
-    const isRoot = original.id === id
-    const freshId = sessionIds.get(original.id)!
+    const file = sessions.get(original.id);
+    if (!file) continue;
+    const isRoot = original.id === id;
+    const freshId = sessionIds.get(original.id)!;
 
     const session: Session = {
       ...original,
       id: freshId,
-      title: isRoot ? (overrides?.title ?? `${original.title} (fork)`) : original.title,
-      status: 'idle',
+      title: isRoot
+        ? (overrides?.title ?? `${original.title} (fork)`)
+        : original.title,
+      status: "idle",
       createdAt: now,
       updatedAt: now,
       pinned: false,
@@ -238,57 +298,67 @@ export function forkSession(
         ? overrides?.standalone
           ? undefined
           : original.parentSessionId
-        : sessionIds.get(original.parentSessionId ?? '') ?? original.parentSessionId,
-      taskLabel: isRoot && overrides?.standalone ? undefined : original.taskLabel
-    }
+        : (sessionIds.get(original.parentSessionId ?? "") ??
+          original.parentSessionId),
+      taskLabel:
+        isRoot && overrides?.standalone ? undefined : original.taskLabel,
+    };
 
     const blocks: Block[] = file.blocks.map((block) => {
-      const childSessionId = block.input?.childSessionId
+      const childSessionId = block.input?.childSessionId;
       return {
         ...block,
         id: blockIds.get(block.id) ?? nanoid(12),
         sessionId: freshId,
-        parentBlockId: block.parentBlockId ? blockIds.get(block.parentBlockId) : undefined,
+        parentBlockId: block.parentBlockId
+          ? blockIds.get(block.parentBlockId)
+          : undefined,
         input:
-          typeof childSessionId === 'string'
-            ? { ...block.input, childSessionId: sessionIds.get(childSessionId) ?? childSessionId }
-            : { ...block.input }
-      }
-    })
+          typeof childSessionId === "string"
+            ? {
+                ...block.input,
+                childSessionId:
+                  sessionIds.get(childSessionId) ?? childSessionId,
+              }
+            : { ...block.input },
+      };
+    });
 
-    const messageIds = new Map<string, string>()
+    const messageIds = new Map<string, string>();
     const messages: Message[] = file.messages.map((message) => {
-      const fresh = nanoid(12)
-      messageIds.set(message.id, fresh)
+      const fresh = nanoid(12);
+      messageIds.set(message.id, fresh);
       return {
-      ...message,
-      id: fresh,
-      sessionId: freshId,
-      parts: message.parts.map((part) =>
-        part.blockId ? { ...part, blockId: blockIds.get(part.blockId) ?? part.blockId } : { ...part }
-      )
-      }
-    })
+        ...message,
+        id: fresh,
+        sessionId: freshId,
+        parts: message.parts.map((part) =>
+          part.blockId
+            ? { ...part, blockId: blockIds.get(part.blockId) ?? part.blockId }
+            : { ...part },
+        ),
+      };
+    });
 
-    sessions.set(freshId, { session, messages, blocks })
-    markDirty(freshId)
+    sessions.set(freshId, { session, messages, blocks });
+    markDirty(freshId);
     // The model-facing transcript is the other half of a session; a fork that
     // copied only what a person reads would start the next turn amnesiac.
-    copyHistory(original.id, freshId, messageIds)
-    created.push(session)
+    copyHistory(original.id, freshId, messageIds);
+    created.push(session);
   }
 
-  for (const session of created) bus.emit({ type: 'session.created', session })
-  return sessions.get(sessionIds.get(id)!)?.session
+  for (const session of created) bus.emit({ type: "session.created", session });
+  return sessions.get(sessionIds.get(id)!)?.session;
 }
 
 export function deleteSession(id: string): void {
-  sessions.delete(id)
-  dirty.delete(id)
-  const path = join(SESSIONS_DIR, `${id}.json`)
-  if (existsSync(path)) rmSync(path)
-  flush()
-  bus.emit({ type: 'session.deleted', sessionId: id })
+  sessions.delete(id);
+  dirty.delete(id);
+  const path = join(SESSIONS_DIR, `${id}.json`);
+  if (existsSync(path)) rmSync(path);
+  flush();
+  bus.emit({ type: "session.deleted", sessionId: id });
 }
 
 /**
@@ -299,7 +369,11 @@ export function deleteSession(id: string): void {
  * is the position.
  */
 export function indexOfMessage(sessionId: string, messageId: string): number {
-  return sessions.get(sessionId)?.messages.findIndex((message) => message.id === messageId) ?? -1
+  return (
+    sessions
+      .get(sessionId)
+      ?.messages.findIndex((message) => message.id === messageId) ?? -1
+  );
 }
 
 /**
@@ -312,156 +386,194 @@ export function indexOfMessage(sessionId: string, messageId: string): number {
  * can reach from anywhere, still holding its own transcript.
  */
 export function truncateFrom(sessionId: string, index: number): Message[] {
-  const file = sessions.get(sessionId)
-  if (!file || index < 0 || index >= file.messages.length) return []
+  const file = sessions.get(sessionId);
+  if (!file || index < 0 || index >= file.messages.length) return [];
 
-  const removed = file.messages.splice(index)
+  const removed = file.messages.splice(index);
 
-  const blockIds = new Set<string>()
+  const blockIds = new Set<string>();
   for (const message of removed) {
-    for (const part of message.parts) if (part.blockId) blockIds.add(part.blockId)
+    for (const part of message.parts)
+      if (part.blockId) blockIds.add(part.blockId);
   }
   // Blocks of blocks: a subagent's work hangs off the task block that started it.
-  let growing = true
+  let growing = true;
   while (growing) {
-    growing = false
+    growing = false;
     for (const block of file.blocks) {
-      if (block.parentBlockId && blockIds.has(block.parentBlockId) && !blockIds.has(block.id)) {
-        blockIds.add(block.id)
-        growing = true
+      if (
+        block.parentBlockId &&
+        blockIds.has(block.parentBlockId) &&
+        !blockIds.has(block.id)
+      ) {
+        blockIds.add(block.id);
+        growing = true;
       }
     }
   }
 
-  const children = new Set<string>()
+  const children = new Set<string>();
   for (const block of file.blocks) {
-    if (!blockIds.has(block.id)) continue
-    const child = block.input?.childSessionId
-    if (typeof child === 'string') children.add(child)
+    if (!blockIds.has(block.id)) continue;
+    const child = block.input?.childSessionId;
+    if (typeof child === "string") children.add(child);
   }
 
-  file.blocks = file.blocks.filter((block) => !blockIds.has(block.id))
-  markDirty(sessionId)
+  file.blocks = file.blocks.filter((block) => !blockIds.has(block.id));
+  markDirty(sessionId);
 
   for (const child of children) {
-    for (const descendant of descendantsOf(child)) deleteSession(descendant.id)
-    deleteSession(child)
+    for (const descendant of descendantsOf(child)) deleteSession(descendant.id);
+    deleteSession(child);
   }
 
-  bus.emit({ type: 'session.rewound', sessionId })
-  bus.emit({ type: 'session.updated', session: file.session })
-  return removed
+  bus.emit({ type: "session.rewound", sessionId });
+  bus.emit({ type: "session.updated", session: file.session });
+  return removed;
 }
 
 /* ---------------- messages ---------------- */
 
 export function listMessages(sessionId: string): Message[] {
-  return sessions.get(sessionId)?.messages ?? []
+  return sessions.get(sessionId)?.messages ?? [];
 }
 
-export function addMessage(input: Omit<Message, 'id' | 'createdAt'> & { id?: string }): Message {
-  const file = sessions.get(input.sessionId)
-  if (!file) throw new Error(`unknown session ${input.sessionId}`)
-  const message: Message = { ...input, id: input.id ?? nanoid(12), createdAt: Date.now() }
-  file.messages.push(message)
-  markDirty(file.session.id)
-  bus.emit({ type: 'message.created', message })
-  return message
+export function addMessage(
+  input: Omit<Message, "id" | "createdAt"> & { id?: string },
+): Message {
+  const file = sessions.get(input.sessionId);
+  if (!file) throw new Error(`unknown session ${input.sessionId}`);
+  const message: Message = {
+    ...input,
+    id: input.id ?? nanoid(12),
+    createdAt: Date.now(),
+  };
+  file.messages.push(message);
+  markDirty(file.session.id);
+  bus.emit({ type: "message.created", message });
+  return message;
 }
 
-export function updateMessage(sessionId: string, messageId: string, patch: Partial<Message>): void {
-  const file = sessions.get(sessionId)
-  const message = file?.messages.find((m) => m.id === messageId)
-  if (!file || !message) return
-  Object.assign(message, patch)
-  markDirty(sessionId)
-  bus.emit({ type: 'message.updated', message })
+export function updateMessage(
+  sessionId: string,
+  messageId: string,
+  patch: Partial<Message>,
+): void {
+  const file = sessions.get(sessionId);
+  const message = file?.messages.find((m) => m.id === messageId);
+  if (!file || !message) return;
+  Object.assign(message, patch);
+  markDirty(sessionId);
+  bus.emit({ type: "message.updated", message });
 }
 
 /** Appends a part and returns its index, so deltas can target it without resending the message. */
-export function pushPart(sessionId: string, messageId: string, part: MessagePart): number {
-  const file = sessions.get(sessionId)
-  const message = file?.messages.find((m) => m.id === messageId)
-  if (!file || !message) return -1
-  message.parts.push(part)
-  markDirty(sessionId)
-  bus.emit({ type: 'message.updated', message })
-  return message.parts.length - 1
+export function pushPart(
+  sessionId: string,
+  messageId: string,
+  part: MessagePart,
+): number {
+  const file = sessions.get(sessionId);
+  const message = file?.messages.find((m) => m.id === messageId);
+  if (!file || !message) return -1;
+  message.parts.push(part);
+  markDirty(sessionId);
+  bus.emit({ type: "message.updated", message });
+  return message.parts.length - 1;
 }
 
 export function appendPartText(
   sessionId: string,
   messageId: string,
   partIndex: number,
-  text: string
+  text: string,
 ): void {
-  const file = sessions.get(sessionId)
-  const message = file?.messages.find((m) => m.id === messageId)
-  const part = message?.parts[partIndex]
-  if (!file || !part) return
-  part.text = (part.text ?? '') + text
-  markDirty(sessionId)
-  bus.emit({ type: 'message.part.delta', messageId, sessionId, partIndex, text })
+  const file = sessions.get(sessionId);
+  const message = file?.messages.find((m) => m.id === messageId);
+  const part = message?.parts[partIndex];
+  if (!file || !part) return;
+  part.text = (part.text ?? "") + text;
+  markDirty(sessionId);
+  bus.emit({
+    type: "message.part.delta",
+    messageId,
+    sessionId,
+    partIndex,
+    text,
+  });
 }
 
 /* ---------------- blocks ---------------- */
 
 export function listBlocks(sessionId: string): Block[] {
-  return sessions.get(sessionId)?.blocks ?? []
+  return sessions.get(sessionId)?.blocks ?? [];
 }
 
 /** Every block across every session, newest first. Feeds the activity rail. */
 export function allBlocks(limit = 500): Block[] {
-  const out: Block[] = []
-  for (const file of sessions.values()) out.push(...file.blocks)
-  return out.sort((a, b) => b.createdAt - a.createdAt).slice(0, limit)
+  const out: Block[] = [];
+  for (const file of sessions.values()) out.push(...file.blocks);
+  return out.sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
 }
 
-export function getBlock(sessionId: string, blockId: string): Block | undefined {
-  return sessions.get(sessionId)?.blocks.find((b) => b.id === blockId)
+export function getBlock(
+  sessionId: string,
+  blockId: string,
+): Block | undefined {
+  return sessions.get(sessionId)?.blocks.find((b) => b.id === blockId);
 }
 
-export function createBlock(input: Omit<Block, 'id' | 'createdAt' | 'output' | 'status'> & {
-  id?: string
-  status?: Block['status']
-}): Block {
-  const file = sessions.get(input.sessionId)
-  if (!file) throw new Error(`unknown session ${input.sessionId}`)
+export function createBlock(
+  input: Omit<Block, "id" | "createdAt" | "output" | "status"> & {
+    id?: string;
+    status?: Block["status"];
+  },
+): Block {
+  const file = sessions.get(input.sessionId);
+  if (!file) throw new Error(`unknown session ${input.sessionId}`);
   const block: Block = {
     ...input,
     id: input.id ?? nanoid(12),
-    output: '',
-    status: input.status ?? 'pending',
-    createdAt: Date.now()
-  }
-  file.blocks.push(block)
-  markDirty(file.session.id)
-  bus.emit({ type: 'block.created', block })
-  return block
+    output: "",
+    status: input.status ?? "pending",
+    createdAt: Date.now(),
+  };
+  file.blocks.push(block);
+  markDirty(file.session.id);
+  bus.emit({ type: "block.created", block });
+  return block;
 }
 
-export function updateBlock(sessionId: string, blockId: string, patch: Partial<Block>): Block | undefined {
-  const block = getBlock(sessionId, blockId)
-  if (!block) return undefined
-  Object.assign(block, patch)
-  markDirty(sessionId)
-  bus.emit({ type: 'block.updated', block })
-  return block
+export function updateBlock(
+  sessionId: string,
+  blockId: string,
+  patch: Partial<Block>,
+): Block | undefined {
+  const block = getBlock(sessionId, blockId);
+  if (!block) return undefined;
+  Object.assign(block, patch);
+  markDirty(sessionId);
+  bus.emit({ type: "block.updated", block });
+  return block;
 }
 
-const OUTPUT_CAP = 400_000
+const OUTPUT_CAP = 400_000;
 
-export function appendBlockOutput(sessionId: string, blockId: string, chunk: string): void {
-  const block = getBlock(sessionId, blockId)
-  if (!block) return
-  if (block.output.length < OUTPUT_CAP) block.output += chunk
-  markDirty(sessionId)
-  bus.emit({ type: 'block.output', blockId, sessionId, chunk })
+export function appendBlockOutput(
+  sessionId: string,
+  blockId: string,
+  chunk: string,
+): void {
+  const block = getBlock(sessionId, blockId);
+  if (!block) return;
+  if (block.output.length < OUTPUT_CAP) block.output += chunk;
+  markDirty(sessionId);
+  bus.emit({ type: "block.output", blockId, sessionId, chunk });
 }
 
 /** Distinct working directories seen across sessions — powers the folder filter. */
 export function knownFolders(): string[] {
-  const set = new Set<string>()
-  for (const file of sessions.values()) set.add(file.session.cwd)
-  return [...set].sort()
+  const set = new Set<string>();
+  for (const file of sessions.values()) set.add(file.session.cwd);
+  return [...set].sort();
 }

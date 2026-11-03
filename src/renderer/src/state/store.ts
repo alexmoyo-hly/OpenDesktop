@@ -85,6 +85,16 @@ interface State {
    * is no other way to hand it something from outside.
    */
   draft: { sessionId: string; text: string; attachments: Attachment[] } | null;
+  /**
+   * What is typed into each composer and not sent, by session.
+   *
+   * Held here rather than in the composer's own state because the composer is
+   * unmounted the moment the board opens, and switching chat changes its
+   * `session` prop without remounting it — two ways for one component's state
+   * to be the wrong text for the conversation on screen. The session carries
+   * the same string once the typing pauses, so a restart keeps it too.
+   */
+  composerText: Record<string, string>;
   changes: RepoChanges | null;
   changesLoading: boolean;
   /** Keyed by `environmentId:cwd`, so sessions sharing a folder share a lookup. */
@@ -151,6 +161,15 @@ interface State {
       attachments: Attachment[];
     } | null,
   ) => void;
+  /**
+   * What is typed in a conversation, kept as it is typed.
+   *
+   * Synchronous in this window, because it has to be: the point is that the
+   * text is still there when the composer is remounted. The write to the
+   * session itself follows a pause, since a keystroke is not a reason to touch
+   * a file on disk — and the session is where it lives between runs.
+   */
+  setComposerText: (sessionId: string, text: string) => void;
   rewindTo: (sessionId: string, messageId: string) => Promise<void>;
   forkFrom: (sessionId: string, messageId: string) => Promise<void>;
   refreshChanges: () => Promise<void>;
@@ -187,6 +206,15 @@ const api = (): Window["opendesktop"] => window.opendesktop;
 
 let toastSeq = 0;
 
+/**
+ * Where the pending write of each conversation's unsent text lives.
+ *
+ * One per session, so a burst of typing in one chat cannot cancel the write for
+ * another — and module-level rather than in the store because a timer is not
+ * state anything renders from.
+ */
+const draftWrites = new Map<string, ReturnType<typeof setTimeout>>();
+
 export const useStore = create<State>((set, get) => ({
   ready: false,
   config: null,
@@ -210,6 +238,7 @@ export const useStore = create<State>((set, get) => ({
   settingsOpen: false,
   folderPicker: null,
   draft: null,
+  composerText: {},
   changes: null,
   changesLoading: false,
   gitSummaries: {},
@@ -358,7 +387,16 @@ export const useStore = create<State>((set, get) => ({
       }
       case "session.deleted": {
         const sessions = state.sessions.filter((s) => s.id !== event.sessionId);
-        set({ sessions });
+        // The conversation is gone, so its unsent text is too: a pending write
+        // would otherwise try to save a draft onto a session nobody has.
+        const pending = draftWrites.get(event.sessionId);
+        if (pending) {
+          clearTimeout(pending);
+          draftWrites.delete(event.sessionId);
+        }
+        const composerText = { ...state.composerText };
+        delete composerText[event.sessionId];
+        set({ sessions, composerText });
         // Otherwise the board's panel keeps showing a card that is gone.
         if (state.boardTaskId === event.sessionId) set({ boardTaskId: null });
         if (state.activeSessionId === event.sessionId && sessions.length > 0) {
@@ -566,6 +604,28 @@ export const useStore = create<State>((set, get) => ({
     set({ folderPicker: { sessionId, mode } }),
   closeFolderPicker: () => set({ folderPicker: null }),
   setDraft: (draft) => set({ draft }),
+
+  setComposerText: (sessionId, text) => {
+    const current = get().composerText;
+    // The same check the store makes, repeated here so a cursor move that fires
+    // `onChange` with the same string does not cost a render.
+    if (current[sessionId] === text) return;
+    set({ composerText: { ...current, [sessionId]: text } });
+
+    // One timer per conversation: typing in one chat and then in another must
+    // not have the first one's last keystroke overwrite the second's file.
+    const pending = draftWrites.get(sessionId);
+    if (pending) clearTimeout(pending);
+    draftWrites.set(
+      sessionId,
+      setTimeout(() => {
+        draftWrites.delete(sessionId);
+        void api()
+          .sessions.setDraft(sessionId, text)
+          .catch(() => undefined);
+      }, 400),
+    );
+  },
 
   /**
    * Takes the conversation back to a message and puts what it said back in the
