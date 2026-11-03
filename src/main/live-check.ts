@@ -24,6 +24,7 @@ interface TurnReport {
   tokensOut: number
   prefixFirstK: number
   prefixLastK: number
+  cacheRead: number
   calls: number
   textParts: number
   longestSilentRun: number
@@ -51,7 +52,10 @@ function fixture(): string {
 
 const read = (dir: string, name: string): string => readFileSync(join(dir, name), 'utf8')
 
-type TurnLog = Pick<TurnReport, 'steps' | 'tokensIn' | 'tokensOut' | 'prefixFirstK' | 'prefixLastK' | 'calls' | 'ms'>
+type TurnLog = Pick<
+  TurnReport,
+  'steps' | 'tokensIn' | 'tokensOut' | 'prefixFirstK' | 'prefixLastK' | 'cacheRead' | 'calls' | 'ms'
+>
 
 /** The app's own end-of-turn log line for this session, which both old and new builds write. */
 function turnLog(sessionId: string): TurnLog {
@@ -64,6 +68,7 @@ function turnLog(sessionId: string): TurnLog {
     tokensOut: number(/tokens=\d+\/(\d+)/),
     prefixFirstK: number(/prefix=(\d+)k/),
     prefixLastK: number(/prefix=\d+k→(\d+)k/),
+    cacheRead: number(/cache=(\d+)r/),
     calls: number(/calls=(\d+)/),
     ms: number(/ (\d+)ms\(model/)
   }
@@ -128,6 +133,15 @@ const SCENARIOS: Scenario[] = [
   }
 ]
 
+// Claude goes through the Anthropic SDK (LiteLLM serves /v1/messages); everything else as OpenAI-compatible.
+const providerFor = (model: string): string => (model.startsWith('claude-') ? 'liveclaude' : 'live')
+
+const PRICES: Record<string, { input: number; output: number }> = {
+  'claude-sonnet-5-5': { input: 2, output: 10 },
+  'claude-haiku-5-5': { input: 0.1, output: 0.5 },
+  'claude-opus-5-5': { input: 4, output: 20 }
+}
+
 async function run(model: string, scenario: Scenario): Promise<TurnReport[]> {
   const dir = fixture()
   const session = store.createSession({
@@ -135,7 +149,7 @@ async function run(model: string, scenario: Scenario): Promise<TurnReport[]> {
     cwd: dir,
     environmentId: 'local',
     agentId: 'manager',
-    model: `live/${model}`,
+    model: `${providerFor(model)}/${model}`,
     autoApprove: true
   })
   const reports: TurnReport[] = []
@@ -171,9 +185,18 @@ async function main(): Promise<void> {
   seedBuiltins()
   setAgentLoader(listAgents)
   const base = defaultConfig()
+  const declare = (ids: string[]) =>
+    Object.fromEntries(
+      ids.map((id) => [
+        id,
+        PRICES[id]
+          ? { id, name: id, reasoning: true, toolCall: true, contextWindow: 1_000_000, price: PRICES[id] }
+          : { id, name: id, reasoning: true, toolCall: true, contextWindow: 1_000_000, billing: 'flat' as const }
+      ])
+    )
   saveConfig({
     ...base,
-    model: `live/${models[0]}`,
+    model: `${providerFor(models[0])}/${models[0]}`,
     autoApprove: true,
     provider: {
       ...base.provider,
@@ -182,12 +205,14 @@ async function main(): Promise<void> {
         npm: '@ai-sdk/openai-compatible',
         name: 'Live',
         options: { baseURL, apiKey: `{file:${keyFile}}` },
-        models: Object.fromEntries(
-          models.map((id) => [
-            id,
-            { id, name: id, reasoning: true, toolCall: true, contextWindow: 1_000_000, billing: 'flat' as const }
-          ])
-        )
+        models: declare(models.filter((id) => providerFor(id) === 'live'))
+      },
+      liveclaude: {
+        id: 'liveclaude',
+        npm: '@ai-sdk/anthropic',
+        name: 'Live Claude',
+        options: { baseURL, apiKey: `{file:${keyFile}}` },
+        models: declare(models.filter((id) => providerFor(id) === 'liveclaude'))
       }
     }
   })
@@ -203,7 +228,7 @@ async function main(): Promise<void> {
         all.push(report)
         console.log(
           `  ${report.ok ? 'ok  ' : 'FAIL'} ${report.scenario} steps=${report.steps} in=${report.tokensIn} ` +
-            `out=${report.tokensOut} prefix=${report.prefixFirstK}k→${report.prefixLastK}k calls=${report.calls} ` +
+            `out=${report.tokensOut} cache=${report.cacheRead} prefix=${report.prefixFirstK}k→${report.prefixLastK}k calls=${report.calls} ` +
             `said=${report.textParts} silent-run=${report.longestSilentRun} ${Math.round(report.ms / 1000)}s ` +
             `status=${report.status}${report.errors.length ? ` errors=${JSON.stringify(report.errors)}` : ''}`
         )

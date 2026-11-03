@@ -372,21 +372,6 @@ export function deleteSession(id: string): void {
 }
 
 /**
- * Where a message sits in its session, or -1.
- *
- * By index rather than by id, because that is what both truncation and a fork
- * need: a fork mints new message ids, so the only thing that survives the copy
- * is the position.
- */
-export function indexOfMessage(sessionId: string, messageId: string): number {
-  return (
-    sessions
-      .get(sessionId)
-      ?.messages.findIndex((message) => message.id === messageId) ?? -1
-  );
-}
-
-/**
  * Removes a message and everything after it, as if the turn never happened.
  *
  * The blocks those messages point at go with them — an orphan block would keep

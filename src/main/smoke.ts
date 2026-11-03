@@ -10953,6 +10953,7 @@ async function main(): Promise<void> {
       config,
       agent: { id: "build", name: "Build", description: "", mode: "all" },
       permissions: { ...config.permissions, read: "allow", bash: "allow" },
+      autoApprove: true,
       sessionId: session.id,
       environmentId: "local",
       cwd: process.cwd(),
@@ -11742,12 +11743,23 @@ async function main(): Promise<void> {
   history.clearHistory(session2.id);
   saveConfig(defaultConfig());
 
+  finished = true;
   console.log(`\n${checks - failures.length}/${checks} checks passed`);
   if (failures.length > 0) {
     console.log(`\nfailed:\n${failures.map((f) => `  - ${f}`).join("\n")}`);
     process.exit(1);
   }
 }
+
+// A check awaiting something nobody resolves (an approval) drains the event loop and used to exit 0.
+let finished = false;
+process.on("exit", (code) => {
+  if (finished || code !== 0) return;
+  console.log(
+    `\nsmoke stopped after ${checks} checks without finishing: something it awaited never settled`,
+  );
+  process.exitCode = 1;
+});
 
 void main().catch((err) => {
   console.error(err);

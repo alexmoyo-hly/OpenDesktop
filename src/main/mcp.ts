@@ -350,10 +350,3 @@ export async function mcpTools(
   }
   return out
 }
-
-/** What a session's chosen servers would add to every step, for the UI. */
-export function tokensFor(servers: McpServerConfig[]): number {
-  let total = 0
-  for (const server of servers) total += live.get(server.id)?.tokens ?? 0
-  return total
-}

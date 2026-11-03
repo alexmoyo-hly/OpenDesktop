@@ -44,10 +44,6 @@ export function hasSessionGrant(sessionId: string, key: string): boolean {
   return sessionGrants.get(sessionId)?.has(key) ?? false
 }
 
-export function clearSessionGrants(sessionId: string): void {
-  sessionGrants.delete(sessionId)
-}
-
 /**
  * What an "always" covers: the tool, or for a command each program in it (`bash:git`).
  * Null when the line hides a command or writes a file — that is never granted ahead.

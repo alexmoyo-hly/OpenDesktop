@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { nanoid } from 'nanoid'
 import mime from 'mime'
@@ -145,18 +145,4 @@ export function modelAcceptsImages(config: AppConfig, ref: string): boolean {
   } catch {
     return false
   }
-}
-
-export function copyForSession(from: string, to: string, attachments: Attachment[]): Attachment[] {
-  const dir = join(ATTACHMENTS_DIR, to)
-  mkdirSync(dir, { recursive: true })
-  return attachments.map((attachment) => {
-    const path = join(dir, basename(attachment.path))
-    try {
-      copyFileSync(attachment.path, path)
-    } catch {
-      return attachment
-    }
-    return { ...attachment, path }
-  })
 }

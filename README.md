@@ -20,6 +20,7 @@ pnpm dev
 | `pnpm test` | Unit and integration tests (vitest), each file in its own throwaway `OPENDESKTOP_HOME` |
 | `pnpm smoke` | Headless engine test — ~1,090 checks, no provider or window needed, fresh data dir per run |
 | `pnpm check` | Typecheck, tests and smoke: what has to pass before a merge |
+| `pnpm live:check <model>…` | Five small real tasks against a real endpoint (`OD_LIVE_KEY_FILE`, `OD_LIVE_BASE_URL`); `claude-*` models go through the Anthropic SDK |
 | `pnpm secrets:check` | Verifies the keychain path — 14 checks, needs Electron |
 
 `OPENDESKTOP_DEBUG=1 pnpm start` mirrors renderer console errors to the terminal.

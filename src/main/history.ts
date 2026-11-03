@@ -202,11 +202,6 @@ export function clearHistory(sessionId: string): void {
   }
 }
 
-/** How big the transcript is on disk. Measures only; it changes nothing. */
-export function historySize(sessionId: string): number {
-  return JSON.stringify(getHistory(sessionId)).length
-}
-
 /* ---------------- where it is safe to cut ---------------- */
 
 interface Part {

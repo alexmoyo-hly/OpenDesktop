@@ -36,7 +36,6 @@ import { execFile, spawn } from 'node:child_process'
 import {
   SANDBOX_IMAGE,
   SANDBOX_TOOLS,
-  SANDBOX_USER,
   SANDBOX_WORKDIR,
   containerName,
   networkName,
@@ -289,11 +288,6 @@ async function waitForFirewall(name: string): Promise<boolean> {
     await new Promise((r) => setTimeout(r, 250))
   }
   return false
-}
-
-/** The `docker exec` prefix for an agent command: unprivileged, in the workdir. */
-export function agentExecPrefix(sessionId: string): string[] {
-  return ['exec', '--user', SANDBOX_USER, '-w', SANDBOX_WORKDIR, containerName(sessionId)]
 }
 
 /* ---------------- the hard network gate ---------------- */

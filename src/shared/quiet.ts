@@ -16,9 +16,6 @@
 /** Warn this often while a turn is quiet, before any decision to stop. */
 export const QUIET_WARN_MS = 90_000
 
-/** Off means never stop for silence; the runner passes the configured value. */
-export const DEFAULT_QUIET_CEILING_MS = 600_000
-
 export type QuietVerdict =
   /** A tool is running, or an approval is in front of the user. Leave it. */
   | 'working'

@@ -1426,23 +1426,4 @@ export function createTools(ctx: ToolContext): ToolSet {
  */
 export const MUTATING_TOOLS = ['write', 'edit', 'bash'] as const
 
-export function toolNames(): string[] {
-  return [
-    'bash',
-    'bash_output',
-    'bash_kill',
-    'read',
-    'write',
-    'edit',
-    'grep',
-    'glob',
-    'list',
-    'fetch',
-    'task',
-    'bulk_read',
-    'code_write',
-    'plan'
-  ]
-}
-
 export { basename }
