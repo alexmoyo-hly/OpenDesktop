@@ -118,7 +118,7 @@ export function NotificationsTab(): ReactNode {
 
       <Row
         label="Not seeing anything?"
-        description="macOS asks the first time, and keeps the answer in System Settings → Notifications. An unsigned development build appears there as Electron."
+        description="macOS asks the first time, and keeps the answer in System Settings → Notifications, where a development build appears as Electron. macOS may drop notifications from a build that is not signed; the test says so when the system refuses one."
       >
         <Button variant="outline" size="sm" onClick={test}>
           Send a test
