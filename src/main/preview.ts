@@ -118,11 +118,11 @@ function directoryPage(envId: string, dir: string, entries: { name: string; dire
     .map((e) => {
       const href = previewUrl(envId, posix.join(dir, e.name))
       const size = e.directory ? '—' : `${(e.size / 1024).toFixed(1)} KB`
-      return `<tr><td><a href="${href}">${e.name}${e.directory ? '/' : ''}</a></td><td>${size}</td></tr>`
+      return `<tr><td><a href="${escapeHtml(href)}">${escapeHtml(e.name)}${e.directory ? '/' : ''}</a></td><td>${size}</td></tr>`
     })
     .join('')
   const parent = previewUrl(envId, posix.dirname(dir))
-  return `<!doctype html><meta charset="utf-8"><title>${dir}</title>
+  return `<!doctype html><meta charset="utf-8"><title>${escapeHtml(dir)}</title>
 <style>
   :root { color-scheme: dark }
   body { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background:#191817; color:#e8e6e3; padding:24px }
@@ -131,13 +131,15 @@ function directoryPage(envId: string, dir: string, entries: { name: string; dire
   table { border-collapse:collapse; width:100% } td { padding:4px 12px 4px 0; border-bottom:1px solid #2a2826 }
   td:last-child { text-align:right; color:#6e6b66 }
 </style>
-<h1>${dir}</h1><table><tr><td><a href="${parent}">../</a></td><td>—</td></tr>${rows}</table>`
+<h1>${escapeHtml(dir)}</h1><table><tr><td><a href="${escapeHtml(parent)}">../</a></td><td>—</td></tr>${rows}</table>`
 }
 
 export function startPreviewServer(): Promise<number> {
   if (server) return Promise.resolve(port)
   return new Promise((resolve, reject) => {
     server = createServer(async (req, res) => {
+      // Opaque origin per page: a previewed repo's own HTML/SVG runs, but cannot read other files from this server.
+      res.setHeader('content-security-policy', 'sandbox allow-scripts allow-forms allow-popups')
       try {
         const url = new URL(req.url ?? '/', 'http://127.0.0.1')
         if (url.searchParams.get('t') !== token) {

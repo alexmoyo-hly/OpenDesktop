@@ -9,7 +9,7 @@ import {
 import { bus } from "./bus";
 import { rawConfig } from "./config";
 import { logLine } from "./log";
-import { listMessages, listSessions } from "./store";
+import { getSession, listMessages, listSessions } from "./store";
 
 /**
  * Telling somebody a turn ended, from the app itself.
@@ -30,6 +30,11 @@ import { listMessages, listSessions } from "./store";
 const working = new Set<string>();
 /** Sessions already told about an approval prompt, so it is said once. */
 const asked = new Set<string>();
+/**
+ * Every notification on screen. Electron drops a collected one from the
+ * Notification Center and loses its click, so each is held until it is done.
+ */
+const onScreen = new Set<Notification>();
 
 let started = false;
 
@@ -121,14 +126,33 @@ function lastSaid(sessionId: string): string | undefined {
   return undefined;
 }
 
+/** Why the last turn failed: the error the runner wrote into its last answer. */
+function lastFailure(sessionId: string): string | undefined {
+  const messages = listMessages(sessionId);
+  const last = messages.filter((message) => message.role === "assistant").at(-1);
+  return last?.parts.filter((part) => part.type === "error").at(-1)?.text;
+}
+
+/** The conversation a person actually opened: a subagent's top-level parent. */
+function rootOf(session: Session): Session {
+  let current = session;
+  for (let depth = 0; current.parentSessionId && depth < 10; depth += 1) {
+    const parent = getSession(current.parentSessionId);
+    if (!parent) break;
+    current = parent;
+  }
+  return current;
+}
+
 function show(session: Session, kind: NoticeKind): void {
   const settings = notificationSettings(rawConfig().notifications);
+  const root = rootOf(session);
   const decision = decideNotice({
     kind,
     settings,
-    session: session.notify,
+    session: root.notify,
     windowFocused: windowFocused(),
-    subagent: Boolean(session.parentSessionId),
+    subagent: root.id !== session.id,
   });
 
   if (!decision.show) {
@@ -142,26 +166,28 @@ function show(session: Session, kind: NoticeKind): void {
     return;
   }
 
-  send(
+  const sent = send(
     noticeContent({
       kind,
-      title: session.taskLabel ?? session.title,
+      title: root.taskLabel ?? root.title,
       said: kind === "done" ? lastSaid(session.id) : undefined,
+      failure: kind === "error" ? lastFailure(session.id) : undefined,
+      waiting: session.status === "blocked" ? session.blockedReason : undefined,
     }),
     settings.sound,
-    session.id,
+    root.id,
   );
-  logLine("info", `notified ${session.id} (${kind})`);
+  if (sent) logLine("info", `notified ${session.id} (${kind})`);
 }
 
 function send(
   content: { title: string; body: string },
   sound: boolean,
   sessionId?: string,
-): void {
+): Notification | null {
   if (!Notification.isSupported()) {
     logLine("warn", "notifications are not supported on this system");
-    return;
+    return null;
   }
 
   const notification = new Notification({
@@ -169,8 +195,19 @@ function send(
     body: content.body,
     silent: !sound,
   });
+  onScreen.add(notification);
+  const release = (): void => {
+    onScreen.delete(notification);
+  };
+  notification.on("close", release);
+  // macOS refuses silently otherwise: an unsigned build, or permission denied.
+  notification.on("failed", (_event, error) => {
+    release();
+    logLine("warn", `notification failed: ${String(error)}`);
+  });
 
   notification.on("click", () => {
+    release();
     // Both halves matter: the window that is nowhere, and the conversation in
     // it. Selecting the session is the renderer's job — it is the only side
     // that knows what the panes are showing — so it is asked for as an event.
@@ -184,6 +221,7 @@ function send(
   });
 
   notification.show();
+  return notification;
 }
 
 /**
@@ -191,18 +229,29 @@ function send(
  *
  * Because the point of it is to answer "does this work on this machine?" — a
  * button that honoured the switch beside it could only ever answer "yes, and
- * also, it is off".
+ * also, it is off". So it waits for the system's answer instead of assuming it.
  */
-export function testNotification(): boolean {
-  if (!Notification.isSupported()) return false;
-  send(
+export function testNotification(): Promise<boolean> {
+  const notification = send(
     {
       title: "OpenDesktop",
       body: "Notifications from this app look like this.",
     },
     true,
   );
-  return true;
+  if (!notification) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    // ponytail: no "show" within 3 s counts as shown; macOS may drop it without saying.
+    const timer = setTimeout(() => resolve(true), 3000);
+    notification.once("show", () => {
+      clearTimeout(timer);
+      resolve(true);
+    });
+    notification.once("failed", () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+  });
 }
 
 /** What the settings page needs to know before offering to turn it on. */

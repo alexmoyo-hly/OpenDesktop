@@ -43,10 +43,6 @@ export function forgetSecrets(): void {
   known.clear()
 }
 
-export function secretCount(): number {
-  return known.size
-}
-
 /** The values themselves, for the one caller that has to compare rather than redact. */
 export function knownSecretValues(): string[] {
   return [...known]

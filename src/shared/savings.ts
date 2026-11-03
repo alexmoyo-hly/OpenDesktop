@@ -66,13 +66,6 @@ export function savingsOf(config: AppConfig | null | undefined, session?: Sessio
   return { ...app, ...own }
 }
 
-/** True when this session decided for itself rather than following the app. */
-export function overridesApp(config: AppConfig | null | undefined, session: Session): boolean {
-  const app = savingsOf(config)
-  const mine = savingsOf(config, session)
-  return app.rtk !== mine.rtk || app.shunt !== mine.shunt
-}
-
 /** The one word the composer shows. Everything off is Direct. */
 export function savingsLabel(savings: Savings): string {
   const on = (['rtk', 'shunt'] as const).filter((key) => savings[key])

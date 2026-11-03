@@ -51,10 +51,6 @@ export function listSkills(): Skill[] {
   return out.sort((a, b) => a.name.localeCompare(b.name))
 }
 
-export function getSkill(id: string): Skill | null {
-  return readSkillDir(SKILLS_DIR, id)
-}
-
 export function deleteSkill(id: string): void {
   const dir = join(SKILLS_DIR, id)
   if (existsSync(dir)) rmSync(dir, { recursive: true })

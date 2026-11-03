@@ -22,6 +22,11 @@ export class GcpWorkstationRuntime extends SshRuntime {
   private localPort = 0
   private starting: Promise<void> | null = null
 
+  // The host is 127.0.0.1 on a new port every time, through a tunnel gcloud has already authenticated.
+  protected override verifyHost(): string | null {
+    return null
+  }
+
   private get settingsBlock(): NonNullable<EnvironmentConfig['workstation']> {
     const workstation = this.env.workstation
     if (!workstation) throw new RuntimeError(`environment "${this.env.id}" has no workstation block`)

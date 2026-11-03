@@ -1,9 +1,10 @@
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import { basename, relative } from 'node:path'
+import { homedir } from 'node:os'
 import type { AgentConfig, AppConfig, Block, Permissions } from '@shared/types'
 import { type Savings } from '@shared/savings'
-import { PermissionDenied, decide, hasSessionGrant, requestApproval } from '../approvals'
+import { PermissionDenied, decide, isGranted, pathsWrittenOutside, requestApproval } from '../approvals'
 import { diffStats, renderDiff } from '../diff'
 import { shellQuote, type Runtime } from '../runtime'
 import {
@@ -11,6 +12,7 @@ import {
   killBackgroundTask,
   listBackgroundTasks,
   readBackgroundOutput,
+  waitForNews,
   startBackgroundTask
 } from '../background'
 import * as store from '../store'
@@ -48,6 +50,8 @@ export interface ToolContext {
   cwd: string
   runtime: Runtime
   signal: AbortSignal
+  /** The session chose not to be asked; reads outside `cwd` then go through too. */
+  autoApprove?: boolean
   /** What this session does to keep its context and its bill down. */
   savings: Savings
   /** The model running this turn, as `provider/model`. */
@@ -77,6 +81,16 @@ function truncate(text: string, limit = MAX_TOOL_OUTPUT): string {
   return `${head}\n\n[... ${text.length - head.length - tail.length} characters truncated ...]\n\n${tail}`
 }
 
+// Elsewhere than this machine the remote home is unknown; "~" then counts as outside.
+function outsideWrites(ctx: ToolContext, command: string): string[] {
+  return pathsWrittenOutside(ctx.cwd, command, ctx.runtime.kind === 'local' ? homedir() : '~')
+}
+
+function isOutside(cwd: string, path: string): boolean {
+  const rel = relative(cwd, path)
+  return rel.startsWith('..') || rel.startsWith('/')
+}
+
 function shortPath(cwd: string, path: string): string {
   const rel = relative(cwd, path)
   return !rel || rel.startsWith('..') ? path : rel
@@ -89,6 +103,10 @@ interface PermissionSpec {
   preview?: string
   /** Ask even if the allowlist would have covered it. */
   forceAsk?: boolean
+  /** A target outside the working directory: an `allow` becomes an `ask` unless the session auto-approves. */
+  outsideCwd?: boolean
+  /** Paths a command writes outside the working directory: asks even past the allowlist and "always". */
+  writesOutside?: string[]
 }
 
 /**
@@ -113,16 +131,18 @@ async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpe
     throw new PermissionDenied(spec.detail, decision.deniedBy ?? `${spec.key} is set to deny`)
   }
 
+  const outsideWrite = (spec.writesOutside?.length ?? 0) > 0 && !ctx.autoApprove
+  const mode = (spec.outsideCwd || outsideWrite) && decision.mode === 'allow' && !ctx.autoApprove ? 'ask' : decision.mode
   const needsAsk =
-    decision.mode === 'ask' &&
-    (!decision.preapproved || spec.forceAsk === true) &&
-    !hasSessionGrant(ctx.sessionId, block.tool)
+    mode === 'ask' &&
+    (outsideWrite ||
+      ((!decision.preapproved || spec.forceAsk === true) && !isGranted(ctx.sessionId, block.tool, spec.command)))
   if (!needsAsk) return
 
   const was = store.getBlock(ctx.sessionId, block.id)?.status
   store.updateBlock(ctx.sessionId, block.id, { status: 'awaiting-approval' })
   store.setSessionStatus(ctx.sessionId, 'awaiting-approval')
-  const answer = await requestApproval({
+  const { answer, note } = await requestApproval({
     sessionId: ctx.sessionId,
     blockId: block.id,
     tool: block.tool,
@@ -130,6 +150,8 @@ async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpe
     detail: spec.detail,
     summary: block.subtitle,
     preview: spec.preview,
+    command: spec.command,
+    ...(outsideWrite ? { outside: spec.writesOutside } : {}),
     environmentId: ctx.environmentId,
     cwd: ctx.cwd
   })
@@ -137,10 +159,10 @@ async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpe
   if (answer === 'reject') {
     store.updateBlock(ctx.sessionId, block.id, {
       status: 'canceled',
-      error: 'Rejected by the user',
+      error: note ? `Rejected by the user: ${note}` : 'Rejected by the user',
       endedAt: Date.now()
     })
-    throw new PermissionDenied(spec.detail)
+    throw new PermissionDenied(spec.detail, undefined, note)
   }
   store.updateBlock(ctx.sessionId, block.id, { status: was ?? 'running' })
 }
@@ -381,7 +403,7 @@ export function createTools(ctx: ToolContext): ToolSet {
               title: command,
               subtitle: `${description} · background`,
               input: { command, description, run_in_background: true },
-              permission: { key: 'bash', command, detail: command, preview: command }
+              permission: { key: 'bash', command, detail: command, preview: command, writesOutside: outsideWrites(ctx, command) }
             },
             async (block) => {
               const task = startBackgroundTask({
@@ -466,7 +488,8 @@ export function createTools(ctx: ToolContext): ToolSet {
               command,
               detail: command,
               preview: command,
-              forceAsk: rewrite?.forceAsk
+              forceAsk: rewrite?.forceAsk,
+              writesOutside: outsideWrites(ctx, command)
             }
           },
           async (block) => {
@@ -510,12 +533,13 @@ export function createTools(ctx: ToolContext): ToolSet {
 
     tools.bash_output = tool({
       description:
-        'Read whatever a background task has produced since the last time you read it. ' +
-        'Returns only the new output, so it is safe to poll.',
+        'Wait up to 20 seconds for new output from a background task (or for it to end), then ' +
+        'return only what arrived since the last read. One call per wait; do other work in between.',
       inputSchema: z.object({
         id: z.string().describe('The id bash returned when it started in the background.')
       }),
       execute: async ({ id }) => {
+        await waitForNews(id, 20_000, ctx.signal)
         const result = readBackgroundOutput(id)
         if (!result) {
           const known = listBackgroundTasks(ctx.sessionId)
@@ -585,7 +609,12 @@ export function createTools(ctx: ToolContext): ToolSet {
             title: shortPath(ctx.cwd, resolved),
             subtitle: offset || limit ? `lines ${offset ?? 1}–${(offset ?? 1) + (limit ?? 2000) - 1}` : undefined,
             input: { path: resolved, offset, limit },
-            permission: { key: 'read', detail: `Read ${resolved}`, preview: resolved }
+            permission: {
+              key: 'read',
+              detail: `Read ${resolved}`,
+              preview: resolved,
+              outsideCwd: isOutside(ctx.cwd, resolved)
+            }
           },
           async (block) => {
             if (await ctx.runtime.isDirectory(resolved)) {
@@ -943,7 +972,8 @@ export function createTools(ctx: ToolContext): ToolSet {
     })
   }
 
-  if (enabled(ctx, 'fetch')) {
+  // fetch runs in this process, on the host: in a sandbox it would bypass the container's network scope.
+  if (enabled(ctx, 'fetch') && ctx.runtime.kind !== 'container') {
     tools.fetch = tool({
       description: 'Fetch a URL and return its text. Runs from the machine hosting OpenDesktop.',
       inputSchema: z.object({ url: z.string().url() }),
@@ -1242,8 +1272,9 @@ export function createTools(ctx: ToolContext): ToolSet {
   }
 
   // Subagents. Depth-limited so a misbehaving agent cannot fork forever.
+  // Sandbox-only agents are refused outside a container, so offering them there is a wasted schema and a wasted step.
   const subagents = Object.values(ctx.config.agent).filter(
-    (a) => a.mode === 'subagent' || a.mode === 'all'
+    (a) => (a.mode === 'subagent' || a.mode === 'all') && (!a.sandboxOnly || ctx.runtime.kind === 'container')
   )
   if (enabled(ctx, 'task') && ctx.spawnSubagent && ctx.depth < 2 && subagents.length > 0) {
     tools.task = tool({
@@ -1405,24 +1436,5 @@ export function createTools(ctx: ToolContext): ToolSet {
  * a read-only agent is missing.
  */
 export const MUTATING_TOOLS = ['write', 'edit', 'bash'] as const
-
-export function toolNames(): string[] {
-  return [
-    'bash',
-    'bash_output',
-    'bash_kill',
-    'read',
-    'write',
-    'edit',
-    'grep',
-    'glob',
-    'list',
-    'fetch',
-    'task',
-    'bulk_read',
-    'code_write',
-    'plan'
-  ]
-}
 
 export { basename }

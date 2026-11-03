@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve as pathResolve } from 'node:path'
 import type { EnvironmentKind, FileEntry } from '@shared/types'
 import type { ExecOptions, ExecResult, Runtime } from './types'
-import { toolEnvironment } from '../tool-env'
+import { secretVariableNames, toolEnvironment } from '../tool-env'
 
 const MAX_OUTPUT = 200_000
 
@@ -31,7 +31,9 @@ export class LocalRuntime implements Runtime {
     const limit = options.maxBytes ?? MAX_OUTPUT
     return new Promise((resolveExec, rejectExec) => {
       const shell = process.env.SHELL || '/bin/bash'
-      const child = spawn(shell, ['-l', '-c', command], {
+      const secrets = secretVariableNames()
+      const script = secrets.length > 0 ? `unset ${secrets.join(' ')}\n${command}` : command
+      const child = spawn(shell, ['-l', '-c', script], {
         cwd: options.cwd,
         env: { ...toolEnvironment(), TERM: 'dumb', NO_COLOR: '1', GIT_PAGER: 'cat', PAGER: 'cat' }
       })

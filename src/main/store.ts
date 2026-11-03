@@ -3,6 +3,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -46,23 +47,31 @@ function markDirty(id: string): void {
   }, 400);
 }
 
+// A crash mid-write must leave the previous file, not half of the new one.
+function writeAtomic(path: string, data: string): void {
+  writeFileSync(`${path}.tmp`, data, "utf8");
+  renameSync(`${path}.tmp`, path);
+}
+
 export function flush(): void {
   ensureDirs();
   for (const id of dirty) {
     const file = sessions.get(id);
     if (!file) continue;
-    writeFileSync(
-      join(SESSIONS_DIR, `${id}.json`),
-      JSON.stringify(file),
-      "utf8",
-    );
+    writeAtomic(join(SESSIONS_DIR, `${id}.json`), JSON.stringify(file));
   }
   dirty.clear();
-  writeFileSync(
+  writeAtomic(
     INDEX_PATH,
     JSON.stringify({ order: [...sessions.keys()], version: 1 }, null, 2),
-    "utf8",
   );
+}
+
+const unreadable = new Set<string>();
+
+/** Sessions whose file would not parse: kept aside as `.corrupt`, and their history must not be swept. */
+export function unreadableSessions(): string[] {
+  return [...unreadable];
 }
 
 export function loadStore(): void {
@@ -93,7 +102,8 @@ export function loadStore(): void {
       }
       sessions.set(file.session.id, file);
     } catch {
-      /* skip corrupt session file */
+      unreadable.add(name.replace(/\.json$/, ""));
+      renameSync(join(SESSIONS_DIR, name), join(SESSIONS_DIR, `${name}.corrupt`));
     }
   }
 }
@@ -359,21 +369,6 @@ export function deleteSession(id: string): void {
   if (existsSync(path)) rmSync(path);
   flush();
   bus.emit({ type: "session.deleted", sessionId: id });
-}
-
-/**
- * Where a message sits in its session, or -1.
- *
- * By index rather than by id, because that is what both truncation and a fork
- * need: a fork mints new message ids, so the only thing that survives the copy
- * is the position.
- */
-export function indexOfMessage(sessionId: string, messageId: string): number {
-  return (
-    sessions
-      .get(sessionId)
-      ?.messages.findIndex((message) => message.id === messageId) ?? -1
-  );
 }
 
 /**

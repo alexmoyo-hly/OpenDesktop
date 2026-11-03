@@ -36,7 +36,6 @@ export const BILLINGS: { id: Billing; label: string; blurb: string }[] = [
   }
 ]
 
-export const TIERS = [1, 2, 3, 4, 5] as const
 export const CHEAPEST = 1
 export const DEAREST = 5
 

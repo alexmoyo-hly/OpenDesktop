@@ -10,7 +10,12 @@ import { startNotifications } from "./notifications";
 import { installMenu } from "./menu";
 import { startPreviewServer, stopPreviewServer } from "./preview";
 import { disposeRuntimes } from "./runtime";
-import { flush, listSessions, loadStore } from "./store";
+import {
+  flush,
+  listSessions,
+  loadStore,
+  unreadableSessions,
+} from "./store";
 import { flushClaims, loadClaims } from "./coordination";
 import { dropOrphans } from "./history";
 import { loadBoards } from "./boards";
@@ -28,6 +33,8 @@ import { isOwnWorkspace, makeWorkspaceDir } from "./workspace";
 import { deliverQueuedFollowUps } from "./agent/runner";
 
 const isDev = !app.isPackaged;
+
+const isWebUrl = (url: string): boolean => /^https?:\/\//i.test(url);
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -70,8 +77,18 @@ function createWindow(): BrowserWindow {
   }
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    if (isWebUrl(url)) void shell.openExternal(url);
     return { action: "deny" };
+  });
+  // The window carries the full preload (terminals, shell); it must never become some other page.
+  win.webContents.on("will-navigate", (event) => event.preventDefault());
+  win.webContents.on("will-attach-webview", (event, preferences, params) => {
+    delete preferences.preload;
+    preferences.nodeIntegration = false;
+    preferences.contextIsolation = true;
+    if (params.src !== "about:blank" && !isWebUrl(params.src)) {
+      event.preventDefault();
+    }
   });
 
   if (isDev && process.env.ELECTRON_RENDERER_URL) {
@@ -131,7 +148,10 @@ void app.whenReady().then(async () => {
   // After the store, which is what says whose claims are still worth keeping.
   loadClaims();
   // Transcripts whose session is gone, now that the store has said what exists.
-  const orphans = dropOrphans(listSessions().map((session) => session.id));
+  const orphans = dropOrphans([
+    ...listSessions().map((session) => session.id),
+    ...unreadableSessions(),
+  ]);
   if (orphans > 0 && process.env.OPENDESKTOP_DEBUG) {
     console.log(
       `[history] dropped ${orphans} transcript${orphans === 1 ? "" : "s"} with no session`,

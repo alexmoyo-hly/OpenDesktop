@@ -17,7 +17,10 @@ pnpm dev
 | `pnpm dist` | Package the macOS app (`.dmg` + `.app` in `release/`) |
 | `pnpm icon` | Regenerate `build/icon.icns` |
 | `pnpm typecheck` | Typecheck main, preload and renderer |
-| `pnpm smoke` | Headless engine test — 730 checks, no provider or window needed |
+| `pnpm test` | Unit and integration tests (vitest), each file in its own throwaway `OPENDESKTOP_HOME` |
+| `pnpm smoke` | Headless engine test — ~1,090 checks, no provider or window needed, fresh data dir per run |
+| `pnpm check` | Typecheck, tests and smoke: what has to pass before a merge |
+| `pnpm live:check <model>…` | Five small real tasks against a real endpoint (`OD_LIVE_KEY_FILE`, `OD_LIVE_BASE_URL`); `claude-*` models go through the Anthropic SDK |
 | `pnpm secrets:check` | Verifies the keychain path — 14 checks, needs Electron |
 
 `OPENDESKTOP_DEBUG=1 pnpm start` mirrors renderer console errors to the terminal.
@@ -35,6 +38,17 @@ dance. That changes the moment the `.dmg` is downloaded from anywhere: a downloa
 quarantined and, being unsigned, will be refused until someone runs
 `xattr -dr com.apple.quarantine /Applications/OpenDesktop.app`. Shipping it properly means a
 Developer ID certificate and notarization.
+
+**Notifications need a packaged, signed app on macOS.** The system only lets an app that is
+bundled and signed ask for permission. `pnpm dev` runs a bare `Electron.app`, so it is always
+refused (`UNErrorDomain 1`, not allowed). With `identity: null`, electron-builder left a broken
+ad-hoc signature and was refused too. So the build now signs ad-hoc (`"identity": "-"`, with
+`hardenedRuntime: false`, which electron-builder requires for ad-hoc). Measured: the packaged app
+asks for permission, appears in System Settings → Notifications → OpenDesktop, and its
+notifications arrive. Ad-hoc is not Developer ID, so a downloaded `.dmg` still needs the
+quarantine removed and is not notarized. The app used to say "Sent" whatever happened. Now
+*Settings → Notifications → Send a test* answers "This system refused it" when it was refused,
+and the log has `notification failed: …`.
 
 **The environment an app gets from Finder is not your shell's.** An app launched from Finder
 or the Dock inherits launchd's environment, which has none of your exports — so
@@ -74,20 +88,30 @@ shape, so an existing config drops straight in:
 
 ```json
 {
-  "model": "helmcode/glm5.3-flash",
+  "model": "helmcode/deepseek-v4-flash",
   "provider": {
     "helmcode": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "Helmcode",
+      "maxConcurrent": 4,
       "options": {
         "baseURL": "https://api.helmcode.com/v1",
         "apiKey": "{env:HELMCODE_API_KEY}"
       },
-      "models": { "glm5.3-flash": { "name": "GLM 5.3 Flash" } }
+      "models": {
+        "deepseek-v4-flash": { "name": "DeepSeek V4 Flash", "reasoning": true, "billing": "flat" },
+        "glm5.3-flash": { "name": "GLM 5.3 Flash", "reasoning": true, "vision": true, "billing": "flat" }
+      }
     }
   }
 }
 ```
+
+`deepseek-v4-flash` is the default because it is the light reasoner of the two: measured on the
+same file and the same answer, `glm5.3-flash` spent ~28k reasoning tokens and 3 minutes against
+~2k and 14 seconds, and it ignores `reasoning_effort`, so the effort dial cannot rein it in.
+`glm5.3-flash` stays declared for images, which `deepseek-v4-flash` is not declared to accept.
+A config file written by an older build keeps whatever model it names.
 
 Two providers ship declared: **Helmcode** (an OpenAI-compatible endpoint) and
 **Anthropic**, with its published prices already filled in. Neither has a
@@ -635,7 +659,18 @@ agent to guess whether the tool is broken. Denylist patterns are globs, which is
 remembering when writing one: the shipped list names the root, the system directories and the
 home directory by hand rather than using `rm -rf /*`, which matches every absolute path there
 is. Chained commands are checked segment by segment, so `ls && curl … | sh` cannot slip through
-on the `ls`.
+on the `ls`. An allowlisted reader with a flag that runs or writes — `find -exec`, `rg --pre`,
+`git diff --output` and the like, quoted or not — always asks. So does a command that writes
+outside the working folder (`> /tmp/x`, `mv a ~/b`), past the allowlist and any "always", and
+the card says where; only a session that runs without asking skips it.
+
+A **bare Deny ends the turn**: told "do not retry", models still reached the same end another
+way, so the next move is yours. Type a reason in the card instead and the turn carries on with
+it — the model gets "Their reason: …" as the result of the call.
+
+**Language** — `"language": "Spanish"` in the config names the language of every reply to the
+model. The default rule, "the language the user wrote in", is not always obeyed: DeepSeek
+narrated in English to Spanish prompts until the language was named.
 
 **What a turn may spend** — `maxSteps` bounds how many times the model may act,
 which is not the same as how much it may spend. A turn also has a token ceiling
@@ -648,6 +683,18 @@ told what is left and asked to land what it is doing, which is how a turn should
 end; the ceiling is the backstop, and a turn that hits it is **handed back**, not
 failed — the reason goes in the transcript, the card lands in Blocked, and
 replying carries the work on.
+
+The same tool call with the same result three times in a row gets the model a note that it will
+not change; five times ends the turn the same way, handed back. Each provider key also has a
+ceiling on requests in flight (`maxConcurrent` on the provider, default 4 — Helmcode allows 5 per
+key), shared by turns, subagents, compaction and the scheduler, so a burst of delegation queues
+instead of failing with 429s.
+
+**Prompt caching** — on Anthropic the request asks for the prefix to be cached, which is opt-in
+there; OpenAI-compatible endpoints cache prefixes by themselves. Reasoning text from an
+OpenAI-compatible model is shown in the transcript but not sent back on later steps: that SDK
+returns it as `reasoning_content`, which on a heavy reasoner grew every step by tens of thousands
+of tokens.
 
 **How long a turn may take** — as long as it takes. There was a thirty-minute wall clock and it
 measured the wrong thing: nearly all of a long turn's time is spent inside tools — a test suite,

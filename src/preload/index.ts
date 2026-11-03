@@ -344,7 +344,9 @@ const api = {
     resolve: (
       id: string,
       answer: "once" | "always" | "reject",
-    ): Promise<void> => ipcRenderer.invoke("approval:resolve", id, answer),
+      note?: string,
+    ): Promise<void> =>
+      ipcRenderer.invoke("approval:resolve", id, answer, note),
   },
   activity: {
     all: (limit?: number): Promise<Block[]> =>

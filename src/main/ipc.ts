@@ -896,8 +896,14 @@ export function registerIpc(): void {
 
   /* ---------- approvals ---------- */
   ipcMain.handle("approval:list", () => listPending());
-  ipcMain.handle("approval:resolve", (_e, id: string, answer: ApprovalAnswer) =>
-    resolveApproval(id, answer),
+  ipcMain.handle(
+    "approval:resolve",
+    (_e, id: string, answer: ApprovalAnswer, note?: unknown) =>
+      resolveApproval(
+        id,
+        answer,
+        typeof note === "string" ? note.slice(0, 2000) : undefined,
+      ),
   );
 
   /* ---------- activity ---------- */
@@ -1147,7 +1153,7 @@ export function registerIpc(): void {
   ipcMain.handle("host:logPath", () => logPath());
   ipcMain.handle("host:revealLog", () => shell.showItemInFolder(logPath()));
   ipcMain.handle("host:openExternal", (_e, url: string) =>
-    shell.openExternal(url),
+    /^https?:\/\//i.test(url) ? shell.openExternal(url) : undefined,
   );
   ipcMain.handle("host:openPath", (_e, path: string) => shell.openPath(path));
 

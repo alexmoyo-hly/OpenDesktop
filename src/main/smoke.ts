@@ -176,7 +176,7 @@ import { diffLines, renderDiff } from "./diff";
 import {
   decide,
   deniedSegment,
-  hasSessionGrant,
+  isGranted,
   matchesAny,
   splitCommand,
   withoutPrompts,
@@ -199,7 +199,7 @@ import {
   DEFAULT_EFFORT,
   canReason,
   effortLevel,
-  reasoningOptions,
+  reasoningLevel,
 } from "@shared/effort";
 import {
   LLAMA_BINARIES,
@@ -838,7 +838,7 @@ function cachingLoopModel(input: number, cached: number): LanguageModel {
     doStream: async () => {
       call++;
       const payload = JSON.stringify({
-        command: "printf step",
+        command: `printf step-${call}`,
         description: "go round again",
       });
       const done = call > 6;
@@ -1024,11 +1024,11 @@ async function main(): Promise<void> {
   );
   check(
     "helmcode model present",
-    Boolean(config.provider.helmcode?.models["glm5.3-flash"]),
+    Boolean(config.provider.helmcode?.models["deepseek-v4-flash"]),
   );
   check(
     "default model ref",
-    config.model === "helmcode/glm5.3-flash",
+    config.model === "helmcode/deepseek-v4-flash",
     config.model,
   );
   check(
@@ -1661,9 +1661,8 @@ async function main(): Promise<void> {
     },
   });
   check(
-    "the configured default model accepts images",
-    modelAcceptsImages(config, config.model),
-    config.model,
+    "a shipped model accepts images, for when the default does not",
+    modelAcceptsImages(config, "helmcode/glm5.3-flash"),
   );
   check(
     "a model marked vision accepts images",
@@ -1976,16 +1975,18 @@ async function main(): Promise<void> {
     );
     check(
       "the grant is this session and no other",
-      !hasSessionGrant(
-        store.createSession({
-          title: "smoke-grant-other",
-          cwd: process.cwd(),
-          environmentId: "local",
-          agentId: "build",
-          model: "mock/mock",
-        }).id,
-        "bash",
-      ),
+      isGranted(granting.id, "bash", "printf again") &&
+        !isGranted(
+          store.createSession({
+            title: "smoke-grant-other",
+            cwd: process.cwd(),
+            environmentId: "local",
+            agentId: "build",
+            model: "mock/mock",
+          }).id,
+          "bash",
+          "printf again",
+        ),
     );
 
     // Auto-approve removes the question, never the policy.
@@ -3439,11 +3440,11 @@ async function main(): Promise<void> {
       }) as ApprovalRequest;
 
     check(
-      "a command is described in the agent's own words",
+      "a command's question stays a sentence whatever the agent labelled it",
       approvalQuestion(
         ask({ summary: "Run the shuffle script with two seeds" }),
         "Auto",
-      ) === "Allow Auto to run the shuffle script with two seeds?",
+      ) === "Allow Auto to run this command?",
       approvalQuestion(
         ask({ summary: "Run the shuffle script with two seeds" }),
         "Auto",
@@ -5954,12 +5955,12 @@ async function main(): Promise<void> {
     };
     check(
       "and failing that, whichever declared model the router likes",
-      workerModelRef(noAnthropicKey, "p/big") === "helmcode/glm5.3-flash",
+      workerModelRef(noAnthropicKey, "p/big") === "helmcode/deepseek-v4-flash",
       workerModelRef(noAnthropicKey, "p/big"),
     );
     check(
-      "with both keys in place the cheapest capable model wins, whoever it belongs to",
-      workerModelRef(base, "p/big") === "anthropic/claude-haiku-4-5",
+      "with both keys in place the flat-rate model wins: it is free at the margin",
+      workerModelRef(base, "p/big") === "helmcode/deepseek-v4-flash",
       workerModelRef(base, "p/big"),
     );
     const noModels = { ...base, provider: {} };
@@ -9733,13 +9734,18 @@ async function main(): Promise<void> {
      * this captures what the model was actually handed — the provider options
      * and the step ceiling — rather than trusting that a slider is wired up.
      */
-    const sent: { options?: Record<string, unknown>; ceiling?: number }[] = [];
+    const sent: {
+      options?: Record<string, unknown>;
+      ceiling?: number;
+      reasoning?: string;
+    }[] = [];
     const capture = (): LanguageModel =>
       new MockLanguageModelV4({
         doStream: async (params: Record<string, unknown>) => {
           sent.push({
             options: params.providerOptions as
               Record<string, unknown> | undefined,
+            reasoning: params.reasoning as string | undefined,
           });
           return {
             stream: new ReadableStream({
@@ -9775,39 +9781,17 @@ async function main(): Promise<void> {
         canReason({ id: "m", name: "M", reasoning: true }),
     );
     check(
-      "Anthropic gets a thinking budget, and never one below its minimum",
-      JSON.stringify(
-        reasoningOptions("@ai-sdk/anthropic", "anthropic", effortLevel(5)),
-      ).includes("32768") &&
-        JSON.stringify(
-          reasoningOptions("@ai-sdk/anthropic", "anthropic", {
-            ...effortLevel(2),
-            budgetTokens: 10,
-          }),
-        ).includes("1024"),
-      reasoningOptions("@ai-sdk/anthropic", "anthropic", effortLevel(5)),
+      "Claude is never told not to think: Opus 5.5 refuses thinking disabled",
+      reasoningLevel("@ai-sdk/anthropic", effortLevel(1)) === "minimal",
     );
     check(
-      "and at the bottom of the scale it is told not to think at all",
-      JSON.stringify(
-        reasoningOptions("@ai-sdk/anthropic", "anthropic", effortLevel(1)),
-      ).includes("disabled"),
+      "elsewhere the bottom of the scale turns reasoning off",
+      reasoningLevel("@ai-sdk/openai-compatible", effortLevel(1)) === "none",
     );
     check(
-      "OpenAI gets a word rather than a budget",
-      JSON.stringify(
-        reasoningOptions("@ai-sdk/openai", "openai", effortLevel(4)),
-      ).includes('"reasoningEffort":"high"'),
-    );
-    check(
-      "and an OpenAI-compatible endpoint gets the field under its own id",
-      JSON.stringify(
-        reasoningOptions(
-          "@ai-sdk/openai-compatible",
-          "helmcode",
-          effortLevel(4),
-        ),
-      ) === '{"helmcode":{"reasoning_effort":"high"}}',
+      "the rest of the scale is the SDK's own level, mapped by each provider",
+      reasoningLevel("@ai-sdk/openai", effortLevel(4)) === "high" &&
+        reasoningLevel("@ai-sdk/anthropic", effortLevel(3)) === "medium",
     );
 
     const thinking = normalizeConfig({
@@ -9852,9 +9836,12 @@ async function main(): Promise<void> {
     history.clearHistory(hard.id);
     await runTurn({ sessionId: hard.id, userText: "think about it" });
     check(
-      "a reasoning model is sent the budget the dial asked for",
-      JSON.stringify(sent[sent.length - 1]?.options ?? {}).includes("32768"),
-      sent[sent.length - 1]?.options,
+      "a reasoning model is sent the level the dial asked for",
+      sent[sent.length - 1]?.reasoning === "high" &&
+        !JSON.stringify(sent[sent.length - 1]?.options ?? {}).includes(
+          "budgetTokens",
+        ),
+      sent[sent.length - 1],
     );
 
     const plain = store.createSession({
@@ -9870,8 +9857,12 @@ async function main(): Promise<void> {
     await runTurn({ sessionId: plain.id, userText: "just do it" });
     check(
       "and a model that declares nothing is sent nothing, rather than a guess",
-      sent[sent.length - 1]?.options === undefined,
-      sent[sent.length - 1]?.options,
+      (sent[sent.length - 1]?.reasoning ?? "provider-default") ===
+        "provider-default" &&
+        !JSON.stringify(sent[sent.length - 1]?.options ?? {}).includes(
+          "thinking",
+        ),
+      sent[sent.length - 1],
     );
 
     providers.setModelResolverOverride(null);
@@ -10962,6 +10953,7 @@ async function main(): Promise<void> {
       config,
       agent: { id: "build", name: "Build", description: "", mode: "all" },
       permissions: { ...config.permissions, read: "allow", bash: "allow" },
+      autoApprove: true,
       sessionId: session.id,
       environmentId: "local",
       cwd: process.cwd(),
@@ -11626,7 +11618,7 @@ async function main(): Promise<void> {
                     controller.enqueue({ type: "text-end", id: `t${n}` });
                   }
                   const input = JSON.stringify({
-                    command: "true",
+                    command: `true ${n}`,
                     description: "probe",
                   });
                   controller.enqueue({
@@ -11751,12 +11743,23 @@ async function main(): Promise<void> {
   history.clearHistory(session2.id);
   saveConfig(defaultConfig());
 
+  finished = true;
   console.log(`\n${checks - failures.length}/${checks} checks passed`);
   if (failures.length > 0) {
     console.log(`\nfailed:\n${failures.map((f) => `  - ${f}`).join("\n")}`);
     process.exit(1);
   }
 }
+
+// A check awaiting something nobody resolves (an approval) drains the event loop and used to exit 0.
+let finished = false;
+process.on("exit", (code) => {
+  if (finished || code !== 0) return;
+  console.log(
+    `\nsmoke stopped after ${checks} checks without finishing: something it awaited never settled`,
+  );
+  process.exitCode = 1;
+});
 
 void main().catch((err) => {
   console.error(err);

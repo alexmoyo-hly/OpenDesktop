@@ -4,9 +4,15 @@ import { bus } from './bus'
 
 export type ApprovalAnswer = 'once' | 'always' | 'reject'
 
+/** What a person decided; `note` is the reason they typed when they said no. */
+export interface ApprovalDecision {
+  answer: ApprovalAnswer
+  note?: string
+}
+
 interface Pending {
   request: ApprovalRequest
-  resolve: (answer: ApprovalAnswer) => void
+  resolve: (decision: ApprovalDecision) => void
 }
 
 const pending = new Map<string, Pending>()
@@ -20,14 +26,25 @@ export class PermissionDenied extends Error {
    * does next is try the same thing another way — so the rule that refused it is
    * named, and the sentence says who refused.
    */
-  constructor(what: string, why?: string) {
+  constructor(what: string, why?: string, note?: string) {
     super(
       why
         ? `Refused by this machine's configuration (${why}): ${what}. Do not retry it and do not ` +
           `work around it; tell the user what you needed and why.`
-        : `Denied by the user: ${what}. Do not retry this; tell the user what you needed and why.`
+        : note
+          ? `Denied by the user: ${what}. Their reason: ${note}. Do what that says; do not retry ` +
+            `the same thing another way.`
+          : `Denied by the user: ${what}. Do not retry this; tell the user what you needed and why.`
     )
+    this.endsTurn = !why && !note
   }
+
+  /**
+   * A bare "no" from a person ends the turn. Told "do not retry", models still
+   * reached the same end another way (mv to /tmp, then cp to /tmp): the next
+   * move has to be the person's.
+   */
+  readonly endsTurn: boolean
 }
 
 export function listPending(): ApprovalRequest[] {
@@ -44,17 +61,34 @@ export function hasSessionGrant(sessionId: string, key: string): boolean {
   return sessionGrants.get(sessionId)?.has(key) ?? false
 }
 
-export function clearSessionGrants(sessionId: string): void {
-  sessionGrants.delete(sessionId)
+/**
+ * What an "always" covers: the tool, or for a command each program in it (`bash:git`).
+ * Null when the line hides a command or writes a file — that is never granted ahead.
+ */
+function grantKeys(tool: string, command?: string): string[] | null {
+  if (!command) return [tool]
+  const segments = splitCommand(command)
+  if (segments.length === 0 || hasOpaqueShellSyntax(command) || segments.some(escalates)) return null
+  return segments.map((segment) => `${tool}:${segment.split(/\s+/)[0]}`)
 }
 
-export function resolveApproval(approvalId: string, answer: ApprovalAnswer): void {
+export function isGranted(sessionId: string, tool: string, command?: string): boolean {
+  const keys = grantKeys(tool, command)
+  return keys !== null && keys.every((key) => hasSessionGrant(sessionId, key))
+}
+
+export function resolveApproval(approvalId: string, answer: ApprovalAnswer, note?: string): void {
   const entry = pending.get(approvalId)
   if (!entry) return
   pending.delete(approvalId)
   bus.emit({ type: 'approval.resolved', approvalId })
-  if (answer === 'always') grantForSession(entry.request.sessionId, entry.request.tool)
-  entry.resolve(answer)
+  if (answer === 'always') {
+    for (const key of grantKeys(entry.request.tool, entry.request.command) ?? []) {
+      grantForSession(entry.request.sessionId, key)
+    }
+  }
+  const reason = answer === 'reject' ? note?.trim() : undefined
+  entry.resolve(reason ? { answer, note: reason } : { answer })
 }
 
 /** Rejects everything outstanding for a session, e.g. when the user stops the turn. */
@@ -63,7 +97,7 @@ export function cancelSessionApprovals(sessionId: string): void {
     if (entry.request.sessionId !== sessionId) continue
     pending.delete(id)
     bus.emit({ type: 'approval.resolved', approvalId: id })
-    entry.resolve('reject')
+    entry.resolve({ answer: 'reject' })
   }
 }
 
@@ -75,11 +109,14 @@ export function requestApproval(input: {
   detail: string
   summary?: string
   preview?: string
+  /** For a shell call: what "always" is granted against. */
+  command?: string
+  outside?: string[]
   environmentId: string
   cwd: string
-}): Promise<ApprovalAnswer> {
+}): Promise<ApprovalDecision> {
   const request: ApprovalRequest = { ...input, id: nanoid(10), createdAt: Date.now() }
-  return new Promise<ApprovalAnswer>((resolve) => {
+  return new Promise<ApprovalDecision>((resolve) => {
     pending.set(request.id, { request, resolve })
     bus.emit({ type: 'approval.requested', request })
   })
@@ -129,6 +166,42 @@ export function hasOpaqueShellSyntax(command: string): boolean {
     command.includes('<(') || // process substitution
     command.includes('<<') // heredoc: the payload is not on this line
   )
+}
+
+// Programs whose path arguments are written, moved or removed.
+const WRITERS = new Set(['mv', 'cp', 'rm', 'mkdir', 'touch', 'tee', 'ln', 'rsync', 'install', 'truncate', 'chmod', 'chown'])
+
+function absolute(path: string, home: string): string | null {
+  const bare = path.replace(/^['"]|['"]$/g, '')
+  if (bare === '~' || bare.startsWith('~/')) return home + bare.slice(1)
+  return bare.startsWith('/') ? bare : null
+}
+
+/**
+ * Absolute paths a command writes outside `cwd`: redirection targets, and the
+ * path arguments of programs that write. Relative paths stay inside by
+ * definition here; `cd elsewhere && …` is not followed.
+ */
+export function pathsWrittenOutside(cwd: string, command: string, home: string): string[] {
+  const targets = [...command.matchAll(/(?:&>>?|\d?>>?)\s*([^\s;&|<>]+)/g)].map((match) => match[1])
+  for (const segment of splitCommand(command)) {
+    const [program, ...args] = segment.split(/\s+/)
+    if (WRITERS.has(program)) targets.push(...args.filter((arg) => !arg.startsWith('-')))
+  }
+  const inside = (path: string): boolean => path === cwd || path.startsWith(cwd.endsWith('/') ? cwd : `${cwd}/`)
+  return targets
+    .map((target) => absolute(target, home))
+    .filter((path): path is string => path !== null && !path.startsWith('/dev/') && !inside(path))
+}
+
+// Flags that turn an allowlisted reader (find, rg, git diff/log) into something that runs code or writes files.
+const RUNS_OR_WRITES = ['-exec', '-execdir', '-ok', '-okdir', '-delete', '-fprint', '-fprint0', '-fprintf', '-fls', '--pre', '--pre-glob', '--output']
+
+export function escalates(segment: string): boolean {
+  return segment
+    .replace(/['"\\]/g, '')
+    .split(/\s+/)
+    .some((word) => RUNS_OR_WRITES.some((flag) => word === flag || word.startsWith(`${flag}=`)))
 }
 
 /**
@@ -198,7 +271,7 @@ export function decide(
     if (
       segments.length > 0 &&
       !hasOpaqueShellSyntax(command) &&
-      segments.every((s) => matchesAny(s, permissions.allowlist))
+      segments.every((s) => matchesAny(s, permissions.allowlist) && !escalates(s))
     ) {
       return { mode, preapproved: true }
     }

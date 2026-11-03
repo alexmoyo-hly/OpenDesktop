@@ -369,14 +369,25 @@ async function run(): Promise<void> {
       environmentId: "local",
       cwd: "/tmp",
       createdAt: 0,
+      outside: ["/tmp/out.txt"],
     };
     const host = mount(<ApprovalCard request={request} active={false} />);
     await settle();
     const text = host.textContent ?? "";
     check(
-      "asks in the agent's own words",
-      text.includes("run the shuffle script with two seeds?"),
+      "asks a whole sentence, with the agent's own words beneath it",
+      text.includes("to run this command?") &&
+        text.includes("Run the shuffle script with two seeds"),
       text,
+    );
+    check(
+      "says when the command writes outside the folder",
+      text.includes("Writes outside the working folder: /tmp/out.txt"),
+      text,
+    );
+    check(
+      "offers a reason to go with a denial",
+      host.querySelector('input[aria-label="Reason for denying"]') !== null,
     );
     check(
       "offers all three ways out",
@@ -1709,11 +1720,10 @@ async function run(): Promise<void> {
     await settle();
     const smart = thinking.textContent ?? "";
     check("at the top of the scale it is Max", smart.includes("Max"), smart);
+    // No token figure: the level goes to the SDK, which maps it per provider, so a budget would be a guess.
     check(
-      "and it says what it will ask the model for, in two numbers",
-      /Thinking high/.test(smart) &&
-        /32k/.test(smart) &&
-        /60 steps/.test(smart),
+      "and it says what it will ask the model for: the level and the step ceiling",
+      /Thinking high/.test(smart) && !/\dk/.test(smart) && /60 steps/.test(smart),
       smart,
     );
     useStore.setState({ config: before });

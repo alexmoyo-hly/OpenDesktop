@@ -17,6 +17,15 @@ import { knownSecretValues } from '@shared/errors'
  * environment a person would have, and deciding by name which of those is too
  * sensitive to pass on is not this function's business.
  */
+/** Names of the variables `toolEnvironment` drops: a login shell re-exports them, so they are unset again after it. */
+export function secretVariableNames(base: NodeJS.ProcessEnv = process.env): string[] {
+  const secrets = knownSecretValues()
+  if (secrets.length === 0) return []
+  return Object.entries(base)
+    .filter(([name, value]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && typeof value === 'string' && secrets.includes(value.trim()))
+    .map(([name]) => name)
+}
+
 export function toolEnvironment(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const secrets = knownSecretValues()
   if (secrets.length === 0) return { ...base }

@@ -101,10 +101,12 @@ export function decideNotice(input: {
   session?: SessionNotify;
   /** Whether this window is the one in front. */
   windowFocused: boolean;
-  /** A subagent's turn: its work is reported by its parent. */
+  /** A subagent's turn: its work is reported by its parent, its waits are not. */
   subagent?: boolean;
 }): NoticeDecision {
-  if (input.subagent)
+  // The parent stays "running" while a child waits on a person, so the child's
+  // wait is the only signal there is; `session` is then the parent's choice.
+  if (input.subagent && input.kind !== "approval")
     return { show: false, reason: "a subagent reports through its parent" };
   if (input.session === "muted")
     return { show: false, reason: "this conversation is muted" };
@@ -121,6 +123,9 @@ export function decideNotice(input: {
 
   if (!input.settings.enabled)
     return { show: false, reason: "notifications are off" };
+
+  // "Every turn" is the session asking for more than the app's defaults give.
+  if (input.session === "all") return { show: true, reason: "shown" };
 
   if (input.kind === "error" && !input.settings.onError) {
     return { show: false, reason: "errors are not notified" };
@@ -147,12 +152,15 @@ export function noticeContent(input: {
   said?: string;
   /** Why a turn failed, when that is what happened. */
   failure?: string;
+  /** What a blocked turn waits on (a question, a loop, a budget), when it is not an approval. */
+  waiting?: string;
 }): { title: string; body: string } {
   const title = input.title.trim() || "Untitled conversation";
   const tail = (input.said ?? "").replace(/\s+/g, " ").trim();
 
   if (input.kind === "approval") {
-    return { title, body: "Waiting for your approval." };
+    const what = (input.waiting ?? "").replace(/\s+/g, " ").trim();
+    return { title, body: what ? trim(what, 160) : "Waiting for your approval." };
   }
   if (input.kind === "error") {
     const why = (input.failure ?? "").replace(/\s+/g, " ").trim();

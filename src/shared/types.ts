@@ -164,6 +164,8 @@ export interface ProviderConfig {
    * against this.
    */
   allowance?: { tokens?: number; usd?: number; period: "day" | "month" };
+  /** Requests this key may have in flight at once, across every session and subagent. Default 4. */
+  maxConcurrent?: number;
   options: {
     baseURL?: string;
     apiKey?: string;
@@ -360,6 +362,11 @@ export interface AppConfig {
    * it on.
    */
   maxTurnTokens?: number;
+  /**
+   * The language every reply is written in, e.g. "Spanish". "The language the
+   * user wrote in" was not enough: DeepSeek narrated in English to Spanish prompts.
+   */
+  language?: string;
   /**
    * A hard wall on the clock. Off by default, and deliberately: the clock
    * measures how long a turn took, not whether any of it was wasted. Most of
@@ -636,6 +643,10 @@ export interface ApprovalRequest {
   summary?: string;
   /** A diff preview for write/edit, the command for bash. */
   preview?: string;
+  /** For a shell call: what "always" is granted against. */
+  command?: string;
+  /** Paths the command writes outside the working directory, said on the card. */
+  outside?: string[];
   environmentId: string;
   cwd: string;
   createdAt: number;
