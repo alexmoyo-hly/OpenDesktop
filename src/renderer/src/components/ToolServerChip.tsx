@@ -71,9 +71,7 @@ export function ToolServerChip({ session }: { session: Session }): ReactNode {
         )}
       >
         <Plug className="h-3.5 w-3.5" />
-        <span className="hidden @[620px]:inline">
-          {chosen.length === 0 ? 'No tools' : `${chosen.length} server${chosen.length === 1 ? '' : 's'}`}
-        </span>
+        {chosen.length > 0 ? <span>{chosen.length}</span> : null}
       </button>
 
       {open ? (

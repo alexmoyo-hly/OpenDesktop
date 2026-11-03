@@ -48,12 +48,32 @@ export function clearSessionGrants(sessionId: string): void {
   sessionGrants.delete(sessionId)
 }
 
+/**
+ * What an "always" covers: the tool, or for a command each program in it (`bash:git`).
+ * Null when the line hides a command or writes a file — that is never granted ahead.
+ */
+function grantKeys(tool: string, command?: string): string[] | null {
+  if (!command) return [tool]
+  const segments = splitCommand(command)
+  if (segments.length === 0 || hasOpaqueShellSyntax(command) || segments.some(escalates)) return null
+  return segments.map((segment) => `${tool}:${segment.split(/\s+/)[0]}`)
+}
+
+export function isGranted(sessionId: string, tool: string, command?: string): boolean {
+  const keys = grantKeys(tool, command)
+  return keys !== null && keys.every((key) => hasSessionGrant(sessionId, key))
+}
+
 export function resolveApproval(approvalId: string, answer: ApprovalAnswer): void {
   const entry = pending.get(approvalId)
   if (!entry) return
   pending.delete(approvalId)
   bus.emit({ type: 'approval.resolved', approvalId })
-  if (answer === 'always') grantForSession(entry.request.sessionId, entry.request.tool)
+  if (answer === 'always') {
+    for (const key of grantKeys(entry.request.tool, entry.request.command) ?? []) {
+      grantForSession(entry.request.sessionId, key)
+    }
+  }
   entry.resolve(answer)
 }
 
@@ -75,6 +95,8 @@ export function requestApproval(input: {
   detail: string
   summary?: string
   preview?: string
+  /** For a shell call: what "always" is granted against. */
+  command?: string
   environmentId: string
   cwd: string
 }): Promise<ApprovalAnswer> {

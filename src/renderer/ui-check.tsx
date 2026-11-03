@@ -1709,11 +1709,10 @@ async function run(): Promise<void> {
     await settle();
     const smart = thinking.textContent ?? "";
     check("at the top of the scale it is Max", smart.includes("Max"), smart);
+    // No token figure: the level goes to the SDK, which maps it per provider, so a budget would be a guess.
     check(
-      "and it says what it will ask the model for, in two numbers",
-      /Thinking high/.test(smart) &&
-        /32k/.test(smart) &&
-        /60 steps/.test(smart),
+      "and it says what it will ask the model for: the level and the step ceiling",
+      /Thinking high/.test(smart) && !/\dk/.test(smart) && /60 steps/.test(smart),
       smart,
     );
     useStore.setState({ config: before });

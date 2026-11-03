@@ -1421,6 +1421,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
       permissions: autoApprove
         ? withoutPrompts(effectivePermissions(config, agent.id))
         : effectivePermissions(config, agent.id),
+      autoApprove,
       sessionId: session.id,
       environmentId: session.environmentId,
       cwd: session.cwd,

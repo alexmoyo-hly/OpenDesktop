@@ -176,7 +176,7 @@ import { diffLines, renderDiff } from "./diff";
 import {
   decide,
   deniedSegment,
-  hasSessionGrant,
+  isGranted,
   matchesAny,
   splitCommand,
   withoutPrompts,
@@ -1975,16 +1975,18 @@ async function main(): Promise<void> {
     );
     check(
       "the grant is this session and no other",
-      !hasSessionGrant(
-        store.createSession({
-          title: "smoke-grant-other",
-          cwd: process.cwd(),
-          environmentId: "local",
-          agentId: "build",
-          model: "mock/mock",
-        }).id,
-        "bash",
-      ),
+      isGranted(granting.id, "bash", "printf again") &&
+        !isGranted(
+          store.createSession({
+            title: "smoke-grant-other",
+            cwd: process.cwd(),
+            environmentId: "local",
+            agentId: "build",
+            model: "mock/mock",
+          }).id,
+          "bash",
+          "printf again",
+        ),
     );
 
     // Auto-approve removes the question, never the policy.

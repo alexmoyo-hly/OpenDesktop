@@ -1,10 +1,11 @@
 import { readFile } from 'node:fs/promises'
-import { existsSync, readFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { createHmac } from 'node:crypto'
 import { homedir } from 'node:os'
-import { join, posix } from 'node:path'
+import { dirname, join, posix } from 'node:path'
 import { Client, type ClientChannel, type SFTPWrapper } from 'ssh2'
 import type { EnvironmentConfig, EnvironmentKind, FileEntry } from '@shared/types'
-import { expandPlaceholders } from '../config'
+import { DATA_DIR, expandPlaceholders } from '../config'
 import { RuntimeError, type ExecOptions, type ExecResult, type Runtime } from './types'
 
 const MAX_OUTPUT = 200_000
@@ -85,6 +86,50 @@ export function listSshAliases(): SshAlias[] {
   return out
 }
 
+function hostMatches(pattern: string, name: string): boolean {
+  if (!pattern.startsWith('|1|')) return pattern.split(',').includes(name)
+  const [, , salt, hash] = pattern.split('|')
+  return createHmac('sha1', Buffer.from(salt, 'base64')).update(name).digest('base64') === hash
+}
+
+/**
+ * OpenSSH's `accept-new`: a known host must present the key on record, a new one is
+ * remembered in this app's own file. Returns why it was refused, or null to connect.
+ */
+// ponytail: no wildcard host patterns or @cert-authority support; add them if someone relies on them.
+export function verifyHostKey(
+  host: string,
+  port: number,
+  key: Buffer,
+  files = { system: join(homedir(), '.ssh', 'known_hosts'), own: join(DATA_DIR, 'known_hosts') }
+): string | null {
+  const name = port === 22 ? host : `[${host}]:${port}`
+  const offered = key.toString('base64')
+  let recorded = false
+  for (const path of [files.system, files.own]) {
+    if (!existsSync(path)) continue
+    for (const raw of readFileSync(path, 'utf8').split('\n')) {
+      const line = raw.trim()
+      if (!line || line.startsWith('#') || line.startsWith('@')) continue
+      const [hosts, , stored] = line.split(/\s+/)
+      if (!hosts || !stored || !hostMatches(hosts, name)) continue
+      if (stored === offered) return null
+      recorded = true
+    }
+  }
+  if (recorded) {
+    return (
+      `the host key for ${name} has changed since it was recorded in known_hosts. ` +
+      `That is what a man-in-the-middle looks like; if the server was rebuilt, remove the old ` +
+      `entry (ssh-keygen -R ${name}) and connect again.`
+    )
+  }
+  const type = key.subarray(4, 4 + key.readUInt32BE(0)).toString()
+  mkdirSync(dirname(files.own), { recursive: true })
+  appendFileSync(files.own, `${name} ${type} ${offered}\n`, { mode: 0o600 })
+  return null
+}
+
 export class SshRuntime implements Runtime {
   readonly kind: EnvironmentKind = 'ssh'
   readonly id: string
@@ -157,13 +202,15 @@ export class SshRuntime implements Runtime {
     return new Promise<void>((resolveConnect, rejectConnect) => {
       const cfg = this.settings()
       const client = new Client()
+      let hostProblem: string | null = null
 
       const fail = (err: Error): void => {
         this.client = null
         this.sftpClient = null
         this.connecting = null
-        this.onStatus?.(false, err.message)
-        rejectConnect(new RuntimeError(`ssh ${cfg.username}@${cfg.host}: ${err.message}`))
+        const message = hostProblem ?? err.message
+        this.onStatus?.(false, message)
+        rejectConnect(new RuntimeError(`ssh ${cfg.username}@${cfg.host}: ${message}`))
       }
 
       client
@@ -192,9 +239,17 @@ export class SshRuntime implements Runtime {
           password: cfg.password,
           keepaliveInterval: this.env.ssh?.keepaliveInterval ?? 20_000,
           readyTimeout: 20_000,
-          agent: process.env.SSH_AUTH_SOCK
+          agent: process.env.SSH_AUTH_SOCK,
+          hostVerifier: (key: Buffer) => {
+            hostProblem = this.verifyHost(cfg.host, cfg.port, key)
+            return hostProblem === null
+          }
         })
     })
+  }
+
+  protected verifyHost(host: string, port: number, key: Buffer): string | null {
+    return verifyHostKey(host, port, key)
   }
 
   private async sftp(): Promise<SFTPWrapper> {

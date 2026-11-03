@@ -1,9 +1,12 @@
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { beforeAll, describe, expect, test } from 'vitest'
 import { NOTHING } from '@shared/savings'
 import { createTools, type ToolContext } from '../src/main/agent/tools'
+import { listPending, resolveApproval } from '../src/main/approvals'
 import { loadConfig } from '../src/main/config'
 import { getRuntime, type Runtime } from '../src/main/runtime'
-import { boot, tempDir } from './helpers'
+import { boot, newSession, tempDir } from './helpers'
 
 beforeAll(boot)
 
@@ -25,6 +28,50 @@ function context(runtime: Runtime): ToolContext {
     spawnSubagent: async () => ({ sessionId: 'c', report: '' })
   } as unknown as ToolContext
 }
+
+describe('reading outside the working directory', () => {
+  async function read(path: string, ctx: ToolContext): Promise<'asked' | 'read'> {
+    const tools = createTools(ctx)
+    const running = (tools.read.execute as (input: unknown, options: unknown) => Promise<unknown>)(
+      { path },
+      { toolCallId: 'r', messages: [] }
+    )
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const asked = listPending().find((request) => request.sessionId === ctx.sessionId)
+    if (asked) {
+      resolveApproval(asked.id, 'once')
+      await running
+      return 'asked'
+    }
+    await running
+    return 'read'
+  }
+
+  function sessionContext(autoApprove = false): ToolContext {
+    const session = newSession()
+    return { ...context(getRuntime('local')), sessionId: session.id, cwd: session.cwd, autoApprove }
+  }
+
+  test('a file inside the folder is read without asking', async () => {
+    const ctx = sessionContext()
+    writeFileSync(join(ctx.cwd, 'inside.txt'), 'ok')
+    expect(await read('inside.txt', ctx)).toBe('read')
+  })
+
+  test('a file outside the folder asks first: it is how ~/.ssh ends up in a prompt', async () => {
+    const ctx = sessionContext()
+    const elsewhere = join(tempDir('od-outside-'), 'secret.txt')
+    writeFileSync(elsewhere, 'secret')
+    expect(await read(elsewhere, ctx)).toBe('asked')
+  })
+
+  test('a session that auto-approves is not interrupted for it', async () => {
+    const ctx = sessionContext(true)
+    const elsewhere = join(tempDir('od-outside-'), 'notes.txt')
+    writeFileSync(elsewhere, 'n')
+    expect(await read(elsewhere, ctx)).toBe('read')
+  })
+})
 
 describe('tool set', () => {
   test('a local session has fetch', () => {

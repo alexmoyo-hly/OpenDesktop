@@ -638,6 +638,8 @@ export interface ApprovalRequest {
   summary?: string;
   /** A diff preview for write/edit, the command for bash. */
   preview?: string;
+  /** For a shell call: what "always" is granted against. */
+  command?: string;
   environmentId: string;
   cwd: string;
   createdAt: number;

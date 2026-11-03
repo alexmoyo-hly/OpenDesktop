@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { basename, relative } from 'node:path'
 import type { AgentConfig, AppConfig, Block, Permissions } from '@shared/types'
 import { type Savings } from '@shared/savings'
-import { PermissionDenied, decide, hasSessionGrant, requestApproval } from '../approvals'
+import { PermissionDenied, decide, isGranted, requestApproval } from '../approvals'
 import { diffStats, renderDiff } from '../diff'
 import { shellQuote, type Runtime } from '../runtime'
 import {
@@ -49,6 +49,8 @@ export interface ToolContext {
   cwd: string
   runtime: Runtime
   signal: AbortSignal
+  /** The session chose not to be asked; reads outside `cwd` then go through too. */
+  autoApprove?: boolean
   /** What this session does to keep its context and its bill down. */
   savings: Savings
   /** The model running this turn, as `provider/model`. */
@@ -78,6 +80,11 @@ function truncate(text: string, limit = MAX_TOOL_OUTPUT): string {
   return `${head}\n\n[... ${text.length - head.length - tail.length} characters truncated ...]\n\n${tail}`
 }
 
+function isOutside(cwd: string, path: string): boolean {
+  const rel = relative(cwd, path)
+  return rel.startsWith('..') || rel.startsWith('/')
+}
+
 function shortPath(cwd: string, path: string): string {
   const rel = relative(cwd, path)
   return !rel || rel.startsWith('..') ? path : rel
@@ -90,6 +97,8 @@ interface PermissionSpec {
   preview?: string
   /** Ask even if the allowlist would have covered it. */
   forceAsk?: boolean
+  /** A target outside the working directory: an `allow` becomes an `ask` unless the session auto-approves. */
+  outsideCwd?: boolean
 }
 
 /**
@@ -114,10 +123,11 @@ async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpe
     throw new PermissionDenied(spec.detail, decision.deniedBy ?? `${spec.key} is set to deny`)
   }
 
+  const mode = spec.outsideCwd && decision.mode === 'allow' && !ctx.autoApprove ? 'ask' : decision.mode
   const needsAsk =
-    decision.mode === 'ask' &&
+    mode === 'ask' &&
     (!decision.preapproved || spec.forceAsk === true) &&
-    !hasSessionGrant(ctx.sessionId, block.tool)
+    !isGranted(ctx.sessionId, block.tool, spec.command)
   if (!needsAsk) return
 
   const was = store.getBlock(ctx.sessionId, block.id)?.status
@@ -131,6 +141,7 @@ async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpe
     detail: spec.detail,
     summary: block.subtitle,
     preview: spec.preview,
+    command: spec.command,
     environmentId: ctx.environmentId,
     cwd: ctx.cwd
   })
@@ -587,7 +598,12 @@ export function createTools(ctx: ToolContext): ToolSet {
             title: shortPath(ctx.cwd, resolved),
             subtitle: offset || limit ? `lines ${offset ?? 1}–${(offset ?? 1) + (limit ?? 2000) - 1}` : undefined,
             input: { path: resolved, offset, limit },
-            permission: { key: 'read', detail: `Read ${resolved}`, preview: resolved }
+            permission: {
+              key: 'read',
+              detail: `Read ${resolved}`,
+              preview: resolved,
+              outsideCwd: isOutside(ctx.cwd, resolved)
+            }
           },
           async (block) => {
             if (await ctx.runtime.isDirectory(resolved)) {
