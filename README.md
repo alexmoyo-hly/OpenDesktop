@@ -709,9 +709,12 @@ reasoning. For handing a conversation over, archiving it or reading it in review
 **Plan mode** — the list icon beside auto-approve. The agent reads, searches, fetches and runs
 the commands the allowlist calls read-only; anything that writes, edits or changes state is
 refused with "put this step in the plan", even with auto-approve on, and its system prompt asks
-it to end with numbered steps, the files involved and how it will check the result. "Run this
-plan" above the composer switches plan mode off and tells it to go ahead. Read as each call
-asks, so switching it reaches a running turn; a subagent follows its conversation.
+it to end with numbered steps, the files involved and how it will check the result. The first
+step of each message also ends with a one-line reminder: right after a plan was run, the
+conversation alone read as "keep editing" and DeepSeek went straight to edits. "Run this plan"
+above the composer switches plan mode off and tells it to go ahead; it is offered only for an
+answer given after plan mode went on (`planSince`). Read as each call asks, so switching it
+reaches a running turn; a subagent follows its conversation.
 
 **Plan** — the agent keeps a checklist with the `todo` tool (the whole list each time, one step
 in progress), drawn above the composer with how far through it is, until it is all done and the
@@ -723,7 +726,8 @@ task, 6–8 steps and 31–42k input tokens (over 80% cached) against 4 and 19k 
 reasoning compares what was asked with what was done and said. When a concrete part was skipped
 without a word, the turn carries on with that part named (a "Not finished yet" row shows why),
 at most twice for one message; an agent that says why it could not do something counts as
-finished. After GitHub Copilot's Autopilot. `"completionCheck": false` turns it off.
+finished. Not in plan mode, where the plan is the whole job. After GitHub Copilot's Autopilot.
+`"completionCheck": false` turns it off.
 
 **Check after editing** — `"verify": { "/path/to/repo": "pnpm typecheck" }` in the config, or
 Settings → Agents → Every agent. After a step in which the agent wrote or edited a file — with
