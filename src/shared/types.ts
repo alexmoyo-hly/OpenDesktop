@@ -629,16 +629,15 @@ export interface Session {
     /** Skills expanded into the message, when any were named. */
     skills?: number;
   };
-  /**
-   * What was typed while the turn was still running.
-   *
-   * Sending used to be refused outright, which is the wrong answer to "I have
-   * one more thing you should know": the thought is gone by the time the turn
-   * ends. They queue here instead, survive a restart, and go as the next turn
-   * the moment this one stops.
-   */
   /** Read-only until the person approves a plan: nothing that changes anything runs. */
   planMode?: boolean;
+  /** When plan mode was switched on: only an answer after it is a plan to run. */
+  planSince?: number;
+  /**
+   * What was typed while the turn was still running: read by the turn before
+   * its next step, or sent as a turn of its own if typed during the last one.
+   * Kept here so it survives a restart.
+   */
   queuedFollowUps?: string[];
   /** The agent's own checklist for the work in hand, as it last wrote it. */
   todos?: TodoItem[];

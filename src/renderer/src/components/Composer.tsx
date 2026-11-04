@@ -376,7 +376,12 @@ function PlanChip({ session }: { session: Session }): ReactNode {
           ? "Plan mode: the agent reads and plans, and changes nothing until you run the plan. Click to let it act."
           : "Plan first: the agent explores read-only and writes a plan for you to approve."
       }
-      onClick={() => void window.opendesktop.sessions.update(session.id, { planMode: !on })}
+      onClick={() =>
+        void window.opendesktop.sessions.update(
+          session.id,
+          on ? { planMode: false } : { planMode: true, planSince: Date.now() },
+        )
+      }
       className={clsx(
         "flex shrink-0 items-center gap-1 rounded-md px-1.5 py-[3px] text-[12px] transition-colors",
         on ? "text-info hover:bg-info/10" : "text-ink-500 hover:text-ink-200",

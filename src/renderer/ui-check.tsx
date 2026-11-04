@@ -819,6 +819,32 @@ async function run(): Promise<void> {
       [...doing.querySelectorAll("button[aria-label]")].map((b) => b.getAttribute("aria-label")),
     );
 
+    // Found live: switched on after an ordinary answer, that answer was offered as a plan to run.
+    const bridge = (window as unknown as { opendesktop: Record<string, Record<string, unknown>> }).opendesktop;
+    const patches: Record<string, unknown>[] = [];
+    (window as unknown as { opendesktop: unknown }).opendesktop = new Proxy(bridge, {
+      get: (target, key) =>
+        key === "sessions"
+          ? new Proxy(target.sessions, {
+              get: (sessions, method) =>
+                method === "update"
+                  ? (_id: string, patch: Record<string, unknown>) => {
+                      patches.push(patch);
+                      return Promise.resolve(null);
+                    }
+                  : sessions[method as string],
+            })
+          : target[key as string],
+    });
+    doing.querySelector<HTMLButtonElement>('[aria-label="Plan first"]')?.click();
+    await settle();
+    (window as unknown as { opendesktop: unknown }).opendesktop = bridge;
+    check(
+      "switching it on records when, so only what comes after counts as a plan",
+      patches.length === 1 && patches[0].planMode === true && typeof patches[0].planSince === "number",
+      patches,
+    );
+
     const answered: Message[] = [
       { id: "p1", sessionId: session.id, role: "user", parts: [{ type: "text", text: "plan it" }], createdAt: 1 } as Message,
       {
@@ -845,6 +871,9 @@ async function run(): Promise<void> {
       (busy.textContent ?? "") === "" && (off.textContent ?? "") === "",
       [busy.textContent, off.textContent],
     );
+    const stale = mount(<PlanReady session={{ ...session, planMode: true, planSince: 10, status: "idle" }} />, 700);
+    await settle();
+    check("nor for an answer given before plan mode was switched on", (stale.textContent ?? "") === "", stale.textContent);
     useStore.setState({ messages: {} });
   }
 

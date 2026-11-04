@@ -15,7 +15,9 @@ export function PlanReady({ session }: { session: Session }): ReactNode {
   const send = useStore((s) => s.send)
   const last = messages.at(-1)
   const answered =
-    last?.role === 'assistant' && last.parts.some((part) => part.type === 'text' && (part.text ?? '').trim())
+    last?.role === 'assistant' &&
+    last.createdAt >= (session.planSince ?? 0) &&
+    last.parts.some((part) => part.type === 'text' && (part.text ?? '').trim())
   if (!session.planMode || session.status === 'running' || session.status === 'awaiting-approval' || !answered) {
     return null
   }
