@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   BellRing,
   Bot,
+  Keyboard,
   Boxes,
   Route,
   FileJson2,
@@ -24,6 +25,7 @@ import { ToolServersTab } from "./ToolServersTab";
 import { HooksTab } from "./HooksTab";
 import { NotificationsTab } from "./NotificationsTab";
 import { AutoModeRules } from "./AutoModeRules";
+import { KeyboardTab } from "./KeyboardTab";
 import { Hint, IconButton, Row, Section, Toggle } from "./settings-ui";
 
 type Page =
@@ -33,6 +35,7 @@ type Page =
   | "skills"
   | "tools"
   | "notifications"
+  | "keyboard"
   | "hooks"
   | "environments"
   | "config";
@@ -88,6 +91,13 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
         icon: <BellRing className="h-4 w-4" />,
         keywords:
           "notify notification alert banner sound mute silence background focus desktop turn finished done",
+      },
+      {
+        id: "keyboard",
+        label: "Keyboard",
+        icon: <Keyboard className="h-4 w-4" />,
+        keywords:
+          "key keyboard shortcut keybinding binding accelerator hotkey panel terminal browse recent",
       },
       {
         id: "hooks",
@@ -360,6 +370,7 @@ export function SettingsPane(): ReactNode {
           {page === "skills" ? <SkillsTab /> : null}
           {page === "tools" ? <ToolServersTab /> : null}
           {page === "notifications" ? <NotificationsTab /> : null}
+          {page === "keyboard" ? <KeyboardTab /> : null}
           {page === "hooks" ? <HooksTab /> : null}
           {page === "environments" ? <EnvironmentsTab /> : null}
           {page === "providers" ? <ModelsTab /> : null}

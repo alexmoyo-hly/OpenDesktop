@@ -7,8 +7,20 @@ import { boot, finish, newSession, useModel } from './helpers'
 
 beforeAll(boot)
 
-/** First request delegates to `explore`; every later one (the subagent's) streams nothing until aborted. */
-function delegatingThenHanging(aborted: { count: number; inFlight?: boolean }): LanguageModel {
+/**
+ * First request delegates to `explore`; every later one (the subagent's) streams
+ * nothing until aborted.
+ *
+ * `onLive` fires when the subagent's request is actually in flight. The test has
+ * to wait for that rather than for the subagent's session, which exists a few
+ * ticks earlier: a stop in between aborts a turn that has not made its call yet,
+ * so the mock's stream never opens and there is nothing to observe being
+ * aborted. That is the arrangement working, not failing.
+ */
+function delegatingThenHanging(
+  aborted: { count: number },
+  onLive: () => void
+): LanguageModel {
   let calls = 0
   return new MockLanguageModelV4({
     doStream: async ({ abortSignal }: { abortSignal?: AbortSignal }) => {
@@ -28,7 +40,8 @@ function delegatingThenHanging(aborted: { count: number; inFlight?: boolean }): 
       }
       // Like fetch: a request made with a signal that is already aborted fails at once.
       if (abortSignal?.aborted) throw new DOMException('aborted', 'AbortError')
-      aborted.inFlight = true
+      // Open and holding: this is the request a stop has to reach.
+      onLive()
       return {
         stream: new ReadableStream({
           start(controller) {
@@ -45,17 +58,18 @@ function delegatingThenHanging(aborted: { count: number; inFlight?: boolean }): 
 }
 
 test('stopping a turn stops the subagents it started', async () => {
-  const aborted: { count: number; inFlight?: boolean } = { count: 0 }
-  useModel(delegatingThenHanging(aborted))
+  const aborted = { count: 0 }
+  let signalLive = (): void => {}
+  const inFlight = new Promise<void>((resolve) => {
+    signalLive = resolve
+  })
+  useModel(delegatingThenHanging(aborted, signalLive))
   const parent = newSession({ agentId: 'manager' })
   const turn = runTurn({ sessionId: parent.id, userText: 'delegate' })
 
-  // Running is not enough: under load the stop landed before the subagent's request was made.
-  let child = undefined as ReturnType<typeof store.listSessions>[number] | undefined
-  for (let i = 0; i < 100 && !(child && aborted.inFlight); i++) {
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    child = store.listSessions().find((s) => s.parentSessionId === parent.id && isRunning(s.id))
-  }
+  // The subagent has made its request and is waiting on it.
+  await inFlight
+  const child = store.listSessions().find((s) => s.parentSessionId === parent.id && isRunning(s.id))
   expect(child).toBeDefined()
 
   stop(parent.id)

@@ -453,6 +453,12 @@ const api = {
       cwd: string;
       cols: number;
       rows: number;
+      /**
+       * Which pane is asking. Two panes showing the same conversation get the
+       * same shell, which is what makes moving the terminal between the dock
+       * and the panel a move rather than a second login.
+       */
+      scope?: string;
     }): Promise<{ id: string; buffer: string }> =>
       ipcRenderer.invoke("terminal:create", input),
     write: (id: string, data: string): Promise<void> =>

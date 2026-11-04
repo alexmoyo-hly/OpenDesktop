@@ -78,6 +78,7 @@ import { bus } from "./bus";
 import { isRunning, queueFollowUp, runTurn, stop } from "./agent/runner";
 import { forkFrom, rewind } from "./rewind";
 import { resolveApproval } from "./approvals";
+import { createTerminal, killTerminal } from "./terminal";
 import * as providers from "./providers";
 import { getRuntime } from "./runtime";
 import {
@@ -6548,6 +6549,9 @@ async function main(): Promise<void> {
       environmentId: "local",
       agentId: "auto",
       model: "mock/mock",
+      // The session is what the prompt decision reads, so the switch has to be
+      // on it and not only on the context built below.
+      autoApprove: true,
     });
     const message = store.addMessage({
       sessionId: session.id,
@@ -10949,12 +10953,25 @@ async function main(): Promise<void> {
       workerIsTheSameModel(alone, "p/flat"),
     );
 
+    /*
+     * Its own session, because the prompt decision reads the stored one: a
+     * fixture that put the switch on the context alone would be describing a
+     * state the app cannot be in.
+     */
+    const shuntSession = store.createSession({
+      title: "shunt",
+      cwd: process.cwd(),
+      environmentId: "local",
+      agentId: "build",
+      model: "mock/mock",
+      autoApprove: true,
+    });
     const contextFor = (config: AppConfig): ToolContext => ({
       config,
       agent: { id: "build", name: "Build", description: "", mode: "all" },
       permissions: { ...config.permissions, read: "allow", bash: "allow" },
       autoApprove: true,
-      sessionId: session.id,
+      sessionId: shuntSession.id,
       environmentId: "local",
       cwd: process.cwd(),
       runtime: getRuntime("local"),
@@ -11568,6 +11585,56 @@ async function main(): Promise<void> {
     );
 
     rmSync(room, { recursive: true, force: true });
+  }
+
+  /*
+   * The terminal pane can be moved: it starts beside the chat and the panel
+   * can call it down to the bottom. Remounting it must reattach to the shell
+   * that is already running under that conversation, not start a second one —
+   * which is what makes the move a move. Nothing else about a PTY is testable
+   * here, but this rule is, and it is the one a refactor breaks.
+   */
+  section("a shell is one per conversation, wherever its pane is drawn");
+  {
+    const scope = "local:/tmp/scope-check";
+    const first = await createTerminal({
+      environmentId: "local",
+      cwd: "/tmp",
+      scope,
+    });
+    check("a shell is started for a conversation", first.id.length > 0, first.id);
+
+    const again = await createTerminal({
+      environmentId: "local",
+      cwd: "/tmp",
+      scope,
+    });
+    check(
+      "asking again from another pane is the same shell, not a second one",
+      again.id === first.id,
+      { first: first.id, again: again.id },
+    );
+
+    // What it printed comes back with it: a reattached pane shows its
+    // scrollback rather than an empty screen above a running prompt.
+    check(
+      "and comes back with the scrollback it had",
+      typeof again.buffer === "string",
+      again.buffer.length,
+    );
+
+    killTerminal(first.id);
+    const after = await createTerminal({
+      environmentId: "local",
+      cwd: "/tmp",
+      scope,
+    });
+    check(
+      "once it is closed, the same scope gets a new one",
+      after.id !== first.id,
+      { killed: first.id, fresh: after.id },
+    );
+    killTerminal(after.id);
   }
 
   section("a turn that goes quiet is asked to say something");

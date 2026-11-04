@@ -16,7 +16,7 @@ import type {
   Session,
   SessionStatus,
 } from "@shared/types";
-import { DATA_DIR } from "./config";
+import { DATA_DIR, rawConfig } from "./config";
 import { copyHistory } from "./history";
 import type { Savings } from "@shared/savings";
 import { bus } from "./bus";
@@ -180,6 +180,7 @@ export function updateSession(
   Object.assign(file.session, patch, { updatedAt: Date.now() });
   markDirty(id);
   bus.emit({ type: "session.updated", session: file.session });
+  // A turn parked at a prompt hears about the switch through this event (approvals.ts).
   return file.session;
 }
 

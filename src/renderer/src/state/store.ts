@@ -17,19 +17,60 @@ import type {
   Skill,
 } from "@shared/types";
 import { MANAGER_AGENT } from "@shared/types";
+import { forgetFolder, rememberFolder } from "@shared/recent";
+import {
+  DEFAULT_LAYOUT,
+  clampPanelHeight,
+  closePane,
+  normalizeLayout,
+  openPane,
+  paneFor,
+  placePane,
+  togglePanel,
+  type PaneLayout,
+  type PaneId,
+  type WorkbenchLayout,
+} from "@shared/layout";
 
-/** What the right-hand dock is showing. The centre column is always the chat. */
+/**
+ * The layout with a pane in the side column.
+ *
+ * The column and the dock are one thing, so every path that puts a pane on the
+ * right goes through here rather than repeating the placement rule.
+ */
+function withSidePane(layout: WorkbenchLayout, pane: PaneId): WorkbenchLayout {
+  return { ...layout, panes: placePane(layout.panes, pane, "right") };
+}
+
+/**
+ * A pane of the workbench. The centre column is always the chat.
+ *
+ * `files` and `editor` are one pane now — a file tree with nothing open is a
+ * directory listing, and the editor is what the tree is for — so a caller
+ * asking for either gets the pair.
+ */
 export type DockTab =
   | "changes"
   | "terminal"
   | "browser"
   | "editor"
   | "files"
+  | "files-editor"
   | "activity"
-  | "background";
+  | "background"
+  | "tasks";
+
 
 /** The two ways of working: one conversation at a time, or the whole board. */
 export type AppView = "chat" | "board";
+
+/**
+ * The three halves of choosing a folder.
+ *
+ * Browse is the tree, search is the whole tree filtered, recent is the short
+ * list of folders this conversation has already been in.
+ */
+export type FolderPickerMode = "browse" | "search" | "recent";
 
 // Declared in @shared/types, beside ActivityQuery, so the headless tests can
 // reach the list logic without pulling the renderer's DOM types in.
@@ -71,6 +112,8 @@ interface State {
   toasts: Toast[];
 
   dock: { open: boolean; tab: DockTab; width: number };
+  /** The workbench's panes: what is docked where, and the bottom panel. */
+  layout: WorkbenchLayout;
   sidebarCollapsed: boolean;
   settingsOpen: boolean;
   /**
@@ -78,7 +121,7 @@ interface State {
    * in. Held here rather than in the composer so that ⌘R can open it from
    * anywhere in the chat.
    */
-  folderPicker: { sessionId: string; mode: "browse" | "search" } | null;
+  folderPicker: { sessionId: string; mode: FolderPickerMode } | null;
   /**
    * Text and attachments waiting to be put back into a composer, from a
    * rewind. Held here because the composer owns what is typed in it and there
@@ -150,9 +193,29 @@ interface State {
   toggleDock: (tab: DockTab) => void;
   closeDock: () => void;
   setDockWidth: (width: number) => void;
+  togglePanel: () => void;
+  openPaneInWorkbench: (pane: PaneId) => void;
+  closePaneInWorkbench: (pane: PaneId) => void;
+  setPanelActive: (pane: PaneId) => void;
+  setPanelHeight: (height: number) => void;
+  setFilesSide: (side: "left" | "right") => void;
+  /** Replaces the pane arrangement, leaving the panel's own state alone. */
+  applyLayout: (panes: PaneLayout) => void;
+  /** Saves the window's arrangement as the one this install opens with. */
+  persistLayout: () => Promise<void>;
   toggleSidebar: () => void;
   setSettingsOpen: (open: boolean) => void;
-  openFolderPicker: (sessionId: string, mode?: "browse" | "search") => void;
+  openFolderPicker: (sessionId: string, mode?: FolderPickerMode) => void;
+  /**
+   * Puts a folder in the recent list, or takes it out.
+   *
+   * Written straight through to the config rather than kept in this store:
+   * the list is what the picker offers on the next launch, so it has to
+   * survive the window, and it is small enough that a write per click is
+   * cheaper than a merge policy.
+   */
+  rememberFolder: (environmentId: string, path: string) => Promise<void>;
+  forgetFolder: (environmentId: string, path: string) => Promise<void>;
   closeFolderPicker: () => void;
   setDraft: (
     draft: {
@@ -237,6 +300,10 @@ export const useStore = create<State>((set, get) => ({
   toasts: [],
 
   dock: { open: false, tab: "changes", width: 460 },
+  // Open from the start, showing the terminal. DEFAULT_LAYOUT keeps its own
+  // default of closed, because that object is also what `normalizeLayout`
+  // falls back to for a window with no panes at all.
+  layout: { ...DEFAULT_LAYOUT, panelOpen: true },
   sidebarCollapsed: false,
   settingsOpen: false,
   folderPicker: null,
@@ -320,6 +387,13 @@ export const useStore = create<State>((set, get) => ({
       backgroundTasks,
       boards,
       workspacesRoot,
+      /*
+       * The window somebody arranged, rather than the one this file starts
+       * with. `normalizeLayout` is what the main process used to read it, so a
+       * layout that reached this far is already a drawable one — and a fresh
+       * install has no key here at all, which is what the defaults are for.
+       */
+      layout: normalizeLayout(config.layout),
       ready: true,
     });
 
@@ -593,22 +667,183 @@ export const useStore = create<State>((set, get) => ({
     if (id) await api().turn.stop(id);
   },
 
-  openDock: (tab) => set({ dock: { ...get().dock, open: true, tab } }),
+  /*
+   * The side dock and the workbench's right column are the same thing seen
+   * from two places: the window bar names a tab, the arrange menu names a
+   * column. Both go through here, so a pane moved to the right shows up as a
+   * dock tab and a dock tab closed from the bar leaves the column.
+   */
+  openDock: (tab) => {
+    const pane = paneFor(tab);
+    set({
+      dock: { ...get().dock, open: true, tab },
+      layout: withSidePane(get().layout, pane),
+    });
+  },
   toggleDock: (tab) => {
     const dock = get().dock;
-    set({ dock: { ...dock, open: !(dock.open && dock.tab === tab), tab } });
+    const pane = paneFor(tab);
+    const closing = dock.open && dock.tab === tab;
+    set({
+      dock: { ...dock, open: !closing, tab },
+      layout: closing
+        ? closePane(get().layout, pane)
+        : withSidePane(get().layout, pane),
+    });
     if (tab === "changes") void get().refreshChanges();
   },
-  closeDock: () => set({ dock: { ...get().dock, open: false } }),
+  closeDock: () => {
+    const tab = get().dock.tab;
+    set({
+      dock: { ...get().dock, open: false },
+      layout: closePane(get().layout, paneFor(tab)),
+    });
+  },
   setDockWidth: (width) =>
     set({
       dock: { ...get().dock, width: Math.min(900, Math.max(320, width)) },
     }),
+
+  /*
+   * The workbench beside the dock, and deliberately a different thing: the
+   * dock is one pane on the right, while these panes can live in any column
+   * and the panel across the bottom. Every action here is a call into
+   * @shared/layout and none of the rules are repeated in this file, so the
+   * window the main process reads and the window this draws cannot disagree.
+   */
+  togglePanel: () => set({ layout: togglePanel(get().layout) }),
+  /*
+   * Opening a pane from the arrange menu has to bring the thing that draws it
+   * with it: a pane moved to the side column is drawn by the dock, and a dock
+   * left closed would be a move nobody could see.
+   */
+  openPaneInWorkbench: (pane) => {
+    const layout = openPane(get().layout, pane);
+    const side = layout.panes.right.includes(pane);
+    set({
+      layout,
+      ...(side ? { dock: { ...get().dock, open: true, tab: pane } } : {}),
+    });
+  },
+  closePaneInWorkbench: (pane) => {
+    const wasDock = get().dock.tab === pane && get().dock.open;
+    set({
+      layout: closePane(get().layout, pane),
+      ...(wasDock ? { dock: { ...get().dock, open: false } } : {}),
+    });
+  },
+  setPanelActive: (pane) =>
+    set({ layout: { ...get().layout, panelActive: pane } }),
+  setPanelHeight: (height) =>
+    set({
+      layout: { ...get().layout, panelHeight: clampPanelHeight(height) },
+    }),
+  setFilesSide: (filesSide) => set({ layout: { ...get().layout, filesSide } }),
+
+  /*
+   * Moving a pane can leave the panel pointing at a tab that is no longer in
+   * it, or holding panes with nothing open. Both are settled here rather than
+   * in the component: the layout is the thing that has to stay coherent, and
+   * `normalizeLayout` is already the one place that knows what coherent means.
+   */
+  applyLayout: (panes) => {
+    /*
+     * Whatever ended up in the side column becomes the dock's tab, and an
+     * emptied column closes it. Without this the arrange menu would reorder a
+     * column the dock is not drawing.
+     */
+    const current = get().layout.panes.right;
+    const arriving = panes.right.find((pane) => !current.includes(pane));
+    const removed = current.find((pane) => !panes.right.includes(pane));
+    set({
+      layout: normalizeLayout({
+        ...get().layout,
+        panes,
+        panelActive: panes.bottom.includes(
+          get().layout.panelActive ?? panes.bottom[0],
+        )
+          ? get().layout.panelActive
+          : (panes.bottom[0] ?? null),
+      }),
+      ...(arriving
+        ? { dock: { ...get().dock, open: true, tab: arriving } }
+        : removed && get().dock.tab === removed
+          ? { dock: { ...get().dock, open: false } }
+          : {}),
+    })
+  },
+
+  /**
+   * The arrangement, written back to the config file.
+   *
+   * Only the layout key is changed: saving the whole document from here would
+   * fight the settings pages, which hold a draft of their own and write it on
+   * a timer.
+   */
+  async persistLayout() {
+    const config = get().config;
+    if (!config) return;
+    try {
+      const next = await api().config.save({ ...config, layout: get().layout });
+      if (next) set({ config: next });
+    } catch (error) {
+      get().pushToast(
+        "warn",
+        `Could not save the window: ${(error as Error).message}`,
+      );
+    }
+  },
+
   toggleSidebar: () => set({ sidebarCollapsed: !get().sidebarCollapsed }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   openFolderPicker: (sessionId, mode = "browse") =>
     set({ folderPicker: { sessionId, mode } }),
   closeFolderPicker: () => set({ folderPicker: null }),
+
+  async rememberFolder(environmentId, path) {
+    const config = get().config;
+    if (!config) return;
+    const recentFolders = rememberFolder(
+      config.recentFolders,
+      environmentId,
+      path,
+    );
+    // Applied here first: the list is on screen and should change under the
+    // click, not a round trip later.
+    set({ config: { ...config, recentFolders } });
+    try {
+      const next = await api().config.save({ ...config, recentFolders });
+      if (next) set({ config: next });
+    } catch (error) {
+      // A folder now missing from a convenience list is not worth a dialog,
+      // but it is worth not losing the click that was meant to happen.
+      get().pushToast(
+        "warn",
+        `Could not remember that folder: ${(error as Error).message}`,
+      );
+    }
+  },
+
+  async forgetFolder(environmentId, path) {
+    const config = get().config;
+    if (!config) return;
+    const recentFolders = forgetFolder(
+      config.recentFolders,
+      environmentId,
+      path,
+    );
+    set({ config: { ...config, recentFolders } });
+    try {
+      const next = await api().config.save({ ...config, recentFolders });
+      if (next) set({ config: next });
+    } catch (error) {
+      get().pushToast(
+        "warn",
+        `Could not update the list: ${(error as Error).message}`,
+      );
+    }
+  },
+
   setDraft: (draft) => set({ draft }),
 
   setComposerText: (sessionId, text) => {

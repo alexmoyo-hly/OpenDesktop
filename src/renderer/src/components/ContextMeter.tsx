@@ -1,10 +1,10 @@
-import clsx from 'clsx'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { MeterEntry, Session } from '@shared/types'
-import { budgetFor } from '@shared/context'
-import { formatCost } from '@shared/cost'
-import { tokens } from '../lib/format'
-import { useStore } from '../state/store'
+import clsx from "clsx";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { MeterEntry, Session } from "@shared/types";
+import { budgetFor } from "@shared/context";
+import { formatCost } from "@shared/cost";
+import { tokens } from "../lib/format";
+import { useStore } from "../state/store";
 
 /**
  * How full the window is, as a ring, with the whole story a click away.
@@ -19,20 +19,42 @@ import { useStore } from '../state/store'
  */
 
 /** Where the ring turns from "filling" to "about to be summarised". */
-function toneFor(share: number, at: number): 'calm' | 'near' | 'over' {
-  if (share >= at) return 'over'
-  if (share >= at * 0.85) return 'near'
-  return 'calm'
+function toneFor(share: number, at: number): "calm" | "near" | "over" {
+  if (share >= at) return "over";
+  if (share >= at * 0.85) return "near";
+  return "calm";
 }
 
-function Ring({ share, tone }: { share: number; tone: 'calm' | 'near' | 'over' }): ReactNode {
+function Ring({
+  share,
+  tone,
+}: {
+  share: number;
+  tone: "calm" | "near" | "over";
+}): ReactNode {
   // 14px, which is the height of the line it sits on. Stroke on the outside so
   // a full ring reads as full without the middle going solid.
-  const radius = 5.6
-  const circumference = 2 * Math.PI * radius
+  const radius = 5.6;
+  const circumference = 2 * Math.PI * radius;
+  /*
+   * The floor used to be half a turn, so that an almost-empty ring still had
+   * something to see. What it actually did was stop the ring ever reading
+   * below fifty per cent: a session that had used nothing, and one two thirds
+   * of the way to a summary, both drew the same half circle beside a number
+   * that disagreed with it. Drawn honestly, from nothing to full — the faint
+   * track underneath is what says the ring has a bottom.
+   */
+  const drawn = Math.min(1, Math.max(0, share));
   return (
     <svg viewBox="0 0 14 14" className="h-3.5 w-3.5 shrink-0 -rotate-90">
-      <circle cx="7" cy="7" r={radius} fill="none" strokeWidth="1.6" className="stroke-ink-800" />
+      <circle
+        cx="7"
+        cy="7"
+        r={radius}
+        fill="none"
+        strokeWidth="1.6"
+        className="stroke-ink-800"
+      />
       <circle
         cx="7"
         cy="7"
@@ -40,68 +62,80 @@ function Ring({ share, tone }: { share: number; tone: 'calm' | 'near' | 'over' }
         fill="none"
         strokeWidth="1.6"
         strokeLinecap="round"
-        strokeDasharray={`${Math.max(0.5, Math.min(1, share) * circumference)} ${circumference}`}
+        strokeDasharray={`${drawn * circumference} ${circumference}`}
         className={clsx(
-          'transition-[stroke-dasharray] duration-500',
-          tone === 'over' ? 'stroke-warn' : tone === 'near' ? 'stroke-brand' : 'stroke-ink-500'
+          "transition-[stroke-dasharray] duration-500",
+          tone === "over"
+            ? "stroke-warn"
+            : tone === "near"
+              ? "stroke-brand"
+              : "stroke-ink-500",
         )}
       />
     </svg>
-  )
+  );
 }
 
 function Bar({
   share,
-  className
+  className,
 }: {
-  share: number
-  className: string
+  share: number;
+  className: string;
 }): ReactNode {
+  // A part worth nothing draws nothing. It used to draw a one per cent sliver,
+  // which on a window with three or four parts was a bar that never quite added
+  // up to the total printed beside it.
+  const width = Math.min(100, Math.max(0, share * 100));
+  if (width <= 0) return null;
   return (
-    <span className={clsx('h-1.5 shrink-0 rounded-full', className)} style={{ width: `${Math.max(1, share * 100)}%` }} />
-  )
+    <span
+      className={clsx("h-1.5 shrink-0 rounded-full", className)}
+      style={{ width: `${width}%` }}
+    />
+  );
 }
 
 interface Part {
-  label: string
-  tokensUsed: number
-  className: string
+  label: string;
+  tokensUsed: number;
+  className: string;
 }
 
 export function ContextMeter({ session }: { session: Session }): ReactNode {
-  const config = useStore((s) => s.config)
-  const [open, setOpen] = useState(false)
-  const [meter, setMeter] = useState<Record<string, MeterEntry>>({})
-  const box = useRef<HTMLDivElement>(null)
+  const config = useStore((s) => s.config);
+  const [open, setOpen] = useState(false);
+  const [meter, setMeter] = useState<Record<string, MeterEntry>>({});
+  const box = useRef<HTMLDivElement>(null);
 
   // Read when the panel opens rather than on a timer: it is a number nobody
   // watches change, and polling it would be a request a second for a label.
   useEffect(() => {
-    if (!open) return
-    void window.opendesktop.meter.get().then((next) => setMeter(next ?? {}))
-  }, [open, session.usage.input, session.usage.output])
+    if (!open) return;
+    void window.opendesktop.meter.get().then((next) => setMeter(next ?? {}));
+  }, [open, session.usage.input, session.usage.output]);
 
   useEffect(() => {
-    if (!open) return
+    if (!open) return;
     const away = (event: MouseEvent): void => {
-      if (!box.current?.contains(event.target as Node)) setOpen(false)
-    }
+      if (!box.current?.contains(event.target as Node)) setOpen(false);
+    };
     const escape = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', away)
-    document.addEventListener('keydown', escape)
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", escape);
     return () => {
-      document.removeEventListener('mousedown', away)
-      document.removeEventListener('keydown', escape)
-    }
-  }, [open])
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
 
-  if (!config) return null
+  if (!config) return null;
 
-  const window_ = budgetFor(config, session.model)
-  const used = session.contextTokens ?? 0
-  const at = config.compactAtFraction ?? 0.7
+  const window_ = budgetFor(config, session.model);
+  const used = session.contextTokens ?? 0;
+  const at = config.compactAtFraction ?? 0.7;
   /*
    * Two shares, and the ring is the second one.
    *
@@ -111,32 +145,60 @@ export function ContextMeter({ session }: { session: Session }): ReactNode {
    * means now — and the panel carries the absolute figure, which is what you
    * want once you have opened it to see what is taking up the room.
    */
-  const share = window_ > 0 ? used / window_ : 0
-  const toSummary = at > 0 ? Math.min(1, share / at) : 0
-  const tone = toneFor(share, at)
+  const share = window_ > 0 ? used / window_ : 0;
+  const toSummary = at > 0 ? Math.min(1, share / at) : 0;
+  const tone = toneFor(share, at);
 
   // Nothing invented: a model that declares no window gets no ring.
-  if (window_ <= 0) return null
+  if (window_ <= 0) return null;
 
-  const parts = session.contextParts
-  const measured = parts?.total ?? used
-  const framing = parts ? Math.max(0, measured - parts.messages - parts.system - (parts.skills ?? 0)) : 0
+  const parts = session.contextParts;
+  const measured = parts?.total ?? used;
+  const framing = parts
+    ? Math.max(
+        0,
+        measured - parts.messages - parts.system - (parts.skills ?? 0),
+      )
+    : 0;
   const rows: Part[] = parts
     ? [
-        { label: 'Messages', tokensUsed: parts.messages, className: 'bg-brand' },
-        { label: 'Tools and framing', tokensUsed: framing, className: 'bg-ok/70' },
-        { label: 'System prompt', tokensUsed: parts.system, className: 'bg-warn/70' },
-        ...(parts.skills ? [{ label: 'Skills', tokensUsed: parts.skills, className: 'bg-ink-400' }] : [])
+        {
+          label: "Messages",
+          tokensUsed: parts.messages,
+          className: "bg-brand",
+        },
+        {
+          label: "Tools and framing",
+          tokensUsed: framing,
+          className: "bg-ok/70",
+        },
+        {
+          label: "System prompt",
+          tokensUsed: parts.system,
+          className: "bg-warn/70",
+        },
+        ...(parts.skills
+          ? [
+              {
+                label: "Skills",
+                tokensUsed: parts.skills,
+                className: "bg-ink-400",
+              },
+            ]
+          : []),
       ]
-    : []
-  const untilSummary = Math.max(0, Math.round(at * window_) - used)
+    : [];
+  const untilSummary = Math.max(0, Math.round(at * window_) - used);
 
   // Every model that has been paid anything at all, this session's own included.
   const spending = Object.entries(meter)
     .map(([ref, entry]) => ({ ref, ...entry }))
     .filter((entry) => entry.month > 0)
-    .sort((a, b) => b.month - a.month)
-  const monthCost = spending.reduce((total, entry) => total + (entry.monthCost ?? 0), 0)
+    .sort((a, b) => b.month - a.month);
+  const monthCost = spending.reduce(
+    (total, entry) => total + (entry.monthCost ?? 0),
+    0,
+  );
 
   return (
     <div className="relative shrink-0" ref={box}>
@@ -148,15 +210,15 @@ export function ContextMeter({ session }: { session: Session }): ReactNode {
           `${tokens(used)} of ${tokens(window_)} tokens, summarised at ${Math.round(at * 100)}% of the window`
         }
         className={clsx(
-          'flex items-center gap-1.5 rounded-md px-1 py-0.5 transition-colors',
-          open ? 'bg-ink-800' : 'hover:bg-ink-850'
+          "flex items-center gap-1.5 rounded-md px-1 py-0.5 transition-colors",
+          open ? "bg-ink-800" : "hover:bg-ink-850",
         )}
       >
         <Ring share={toSummary} tone={tone} />
         <span
           className={clsx(
-            'text-[11px] tabular-nums',
-            tone === 'over' ? 'text-warn' : 'text-ink-500'
+            "text-[11px] tabular-nums",
+            tone === "over" ? "text-warn" : "text-ink-500",
           )}
         >
           {Math.round(toSummary * 100)}%
@@ -179,17 +241,33 @@ export function ContextMeter({ session }: { session: Session }): ReactNode {
 
           <div className="bg-ink-850 mt-2 flex h-1.5 w-full gap-[1px] overflow-hidden rounded-full">
             {rows.map((row) => (
-              <Bar key={row.label} share={row.tokensUsed / window_} className={row.className} />
+              <Bar
+                key={row.label}
+                share={row.tokensUsed / window_}
+                className={row.className}
+              />
             ))}
           </div>
 
           {parts ? (
             <div className="mt-2.5 space-y-1">
               {rows.map((row) => (
-                <div key={row.label} className="flex items-center gap-2 text-[11.5px]">
-                  <span className={clsx('h-2 w-2 shrink-0 rounded-[2px]', row.className)} />
-                  <span className="text-ink-300 min-w-0 flex-1 truncate">{row.label}</span>
-                  <span className="text-ink-400 tabular-nums">{tokens(row.tokensUsed)}</span>
+                <div
+                  key={row.label}
+                  className="flex items-center gap-2 text-[11.5px]"
+                >
+                  <span
+                    className={clsx(
+                      "h-2 w-2 shrink-0 rounded-[2px]",
+                      row.className,
+                    )}
+                  />
+                  <span className="text-ink-300 min-w-0 flex-1 truncate">
+                    {row.label}
+                  </span>
+                  <span className="text-ink-400 tabular-nums">
+                    {tokens(row.tokensUsed)}
+                  </span>
                   <span className="text-ink-500 w-9 text-right tabular-nums">
                     {Math.round((row.tokensUsed / window_) * 100)}%
                   </span>
@@ -201,9 +279,14 @@ export function ContextMeter({ session }: { session: Session }): ReactNode {
                   className="text-ink-400 min-w-0 flex-1 truncate"
                   title={`Summarised at ${Math.round(at * 100)}% of the window, keeping the last ${config.keepRecentMessages ?? 8} messages verbatim`}
                 >
-                  Room until a summary <span className="text-ink-600">at {Math.round(at * 100)}%</span>
+                  Room until a summary{" "}
+                  <span className="text-ink-600">
+                    at {Math.round(at * 100)}%
+                  </span>
                 </span>
-                <span className="text-ink-500 tabular-nums">{tokens(untilSummary)}</span>
+                <span className="text-ink-500 tabular-nums">
+                  {tokens(untilSummary)}
+                </span>
                 <span className="text-ink-600 w-9 text-right tabular-nums">
                   {Math.round((untilSummary / window_) * 100)}%
                 </span>
@@ -227,7 +310,7 @@ export function ContextMeter({ session }: { session: Session }): ReactNode {
                 Usage this month
               </span>
               <span className="text-ink-500 text-[11px] tabular-nums">
-                {monthCost > 0 ? formatCost(monthCost) : '—'}
+                {monthCost > 0 ? formatCost(monthCost) : "—"}
               </span>
             </div>
             {spending.length === 0 ? (
@@ -235,18 +318,27 @@ export function ContextMeter({ session }: { session: Session }): ReactNode {
             ) : (
               <div className="mt-1.5 space-y-1">
                 {spending.map((entry) => (
-                  <div key={entry.ref} className="flex items-center gap-2 text-[11.5px]">
+                  <div
+                    key={entry.ref}
+                    className="flex items-center gap-2 text-[11.5px]"
+                  >
                     <span
                       className={clsx(
-                        'min-w-0 flex-1 truncate',
-                        entry.ref === session.model ? 'text-ink-200' : 'text-ink-400'
+                        "min-w-0 flex-1 truncate",
+                        entry.ref === session.model
+                          ? "text-ink-200"
+                          : "text-ink-400",
                       )}
                     >
                       {entry.ref}
                     </span>
-                    <span className="text-ink-500 tabular-nums">{tokens(entry.month)}</span>
+                    <span className="text-ink-500 tabular-nums">
+                      {tokens(entry.month)}
+                    </span>
                     <span className="text-ink-500 w-12 text-right tabular-nums">
-                      {entry.monthCost > 0 ? formatCost(entry.monthCost) : 'free'}
+                      {entry.monthCost > 0
+                        ? formatCost(entry.monthCost)
+                        : "free"}
                     </span>
                   </div>
                 ))}
@@ -256,5 +348,5 @@ export function ContextMeter({ session }: { session: Session }): ReactNode {
         </div>
       ) : null}
     </div>
-  )
+  );
 }

@@ -1,6 +1,13 @@
 import { nanoid } from 'nanoid'
-import type { AppConfig, ApprovalRequest, PermissionMode, Permissions } from '@shared/types'
+import type {
+  ApprovalRequest,
+  AppConfig,
+  PermissionMode,
+  Permissions,
+  Session
+} from '@shared/types'
 import { bus } from './bus'
+import { rawConfig } from './config'
 import { getSession, rootOf } from './store'
 
 export type ApprovalAnswer = 'once' | 'always' | 'reject'
@@ -108,8 +115,9 @@ export function cancelSessionApprovals(sessionId: string): void {
  */
 export function autoApproving(config: AppConfig, sessionId: string): boolean {
   const session = getSession(sessionId)
-  if (!session || config.environment[session.environmentId]?.kind === 'container') return false
-  return rootOf(session).autoApprove ?? config.autoApprove ?? false
+  if (!session) return false
+  const container = config.environment[session.environmentId]?.kind === 'container'
+  return autoApproveNow(rootOf(session), config, container)
 }
 
 /** Once the switch is on, what that conversation and its subagents are waiting on goes through. */
@@ -143,6 +151,51 @@ export function requestApproval(input: {
     bus.emit({ type: 'approval.requested', request })
   })
 }
+
+/**
+ * Answers everything already waiting, for sessions that have just been told
+ * not to ask.
+ *
+ * Turning the switch on has to reach the card that is on screen, or the switch
+ * is a lie: the turn is stopped at a prompt, the person clicks "run without
+ * asking", and the prompt they were looking at goes on asking. Nothing else in
+ * the app can resolve it — the runner is parked on a promise, not polling.
+ *
+ * Each request is answered as `once`, not `always`: the grant map is for
+ * programs a person named one at a time, and a blanket allow is neither what
+ * was shown nor what auto-approve means. The denylist already had its say when
+ * the question was raised, so what is released here is something the session is
+ * now allowed to do anyway.
+ */
+export function releaseAutoApproved(
+  autoApproves: (sessionId: string) => boolean
+): number {
+  let released = 0
+  for (const [id, entry] of [...pending.entries()]) {
+    if (!autoApproves(entry.request.sessionId)) continue
+    pending.delete(id)
+    bus.emit({ type: 'approval.resolved', approvalId: id })
+    entry.resolve({ answer: 'once' })
+    released++
+  }
+  return released
+}
+
+/**
+ * Releases whatever is waiting, using the live answer: the conversation's switch
+ * (a subagent follows the one it works for), the app-wide default, the sandbox.
+ * Called when either switch changes; with nothing pending it does nothing.
+ */
+export function releasePending(): number {
+  return releaseAutoApproved((sessionId) => autoApproving(rawConfig(), sessionId))
+}
+
+// The store announces every switch change here; listening, rather than being called
+// by the store, keeps store -> approvals -> store from becoming an import cycle.
+// ponytail: runs on every session update; pending is empty almost always.
+bus.subscribe((event) => {
+  if (event.type === 'session.updated') releasePending()
+})
 
 /* ---------------- pattern matching ---------------- */
 
@@ -404,6 +457,30 @@ export function withoutPrompts(permissions: Permissions): Permissions {
     }
   }
   return out
+}
+
+/**
+ * Whether this session is running without prompts, asked at the moment of the
+ * question rather than once when the turn began.
+ *
+ * Read live because of what the switch is for: it is turned on *while* a turn
+ * sits at a prompt, and a value captured at the start of the turn made the
+ * switch look broken — the person clicked it, and the card in front of them
+ * went on asking. The same reason applies to the app-wide default: a session
+ * that never chose for itself must follow it whenever it changes, not the
+ * value the config happened to hold on the day the session was made.
+ *
+ * The sandbox is the one override that stays: an agent inside a container is
+ * being watched on purpose, so the container kind keeps the prompts whatever
+ * either switch says.
+ */
+export function autoApproveNow(
+  session: Pick<Session, 'autoApprove'> | undefined,
+  config: Pick<AppConfig, 'autoApprove'>,
+  container: boolean
+): boolean {
+  if (container) return false
+  return session?.autoApprove ?? config.autoApprove ?? false
 }
 
 export interface PermissionDecision {

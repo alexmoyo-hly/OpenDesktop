@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { approvalDetail, approvalQuestion } from '../src/shared/approvals'
-import { decide, isGranted, listPending, pathsWrittenOutside, requestApproval, resolveApproval, splitCommand, changesFiles } from '../src/main/approvals'
+import { autoApproveNow, changesFiles, decide, isGranted, listPending, pathsWrittenOutside, releaseAutoApproved, requestApproval, resolveApproval, splitCommand } from '../src/main/approvals'
 import { defaultConfig } from '../src/main/config'
 
 async function answerAlways(sessionId: string, tool: string, command?: string): Promise<void> {
@@ -129,5 +129,70 @@ describe('a shell command that changes files', () => {
       expect(changesFiles(command), command).toBe(true)
     for (const command of ['ls 2>/dev/null', 'grep -n "a > b" f.txt', "sed -n '1,5p' f.txt", 'git status', 'node test.js 2>&1 | tail'])
       expect(changesFiles(command), command).toBe(false)
+  })
+})
+
+describe('what "running without asking" means, read when the question is asked', () => {
+  test('a session that never chose follows the app, whatever the app says now', () => {
+    expect(autoApproveNow({}, { autoApprove: true }, false)).toBe(true)
+    expect(autoApproveNow({}, { autoApprove: false }, false)).toBe(false)
+    // The bug this replaced: the app's value was copied into the session when
+    // it was made, so turning the switch on afterwards changed nothing.
+    expect(autoApproveNow({ autoApprove: undefined }, { autoApprove: true }, false)).toBe(true)
+  })
+
+  test('a session that said no of its own keeps saying no', () => {
+    expect(autoApproveNow({ autoApprove: false }, { autoApprove: true }, false)).toBe(false)
+  })
+
+  test('a sandbox keeps the prompts whatever either switch says', () => {
+    expect(autoApproveNow({ autoApprove: true }, { autoApprove: true }, true)).toBe(false)
+  })
+})
+
+describe('turning the switch on answers what is already waiting', () => {
+  test('the card on screen is resolved, and only for sessions it covers', async () => {
+    const mine = requestApproval({
+      sessionId: 'rel-1',
+      blockId: 'b',
+      tool: 'bash',
+      title: 't',
+      detail: 'd',
+      environmentId: 'local',
+      cwd: '/'
+    })
+    const theirs = requestApproval({
+      sessionId: 'rel-2',
+      blockId: 'b',
+      tool: 'bash',
+      title: 't',
+      detail: 'd',
+      environmentId: 'local',
+      cwd: '/'
+    })
+
+    // Only the session that was just switched over is released.
+    expect(releaseAutoApproved((id) => id === 'rel-1')).toBe(1)
+    await expect(mine).resolves.toEqual({ answer: 'once' })
+    expect(listPending().some((request) => request.sessionId === 'rel-2')).toBe(true)
+
+    resolveApproval(listPending().find((r) => r.sessionId === 'rel-2')!.id, 'reject')
+    await theirs
+  })
+
+  test('a session that is not auto-approving keeps its question', async () => {
+    const waiting = requestApproval({
+      sessionId: 'rel-3',
+      blockId: 'b',
+      tool: 'bash',
+      title: 't',
+      detail: 'd',
+      environmentId: 'local',
+      cwd: '/'
+    })
+    expect(releaseAutoApproved(() => false)).toBe(0)
+    expect(listPending().some((request) => request.sessionId === 'rel-3')).toBe(true)
+    resolveApproval(listPending().find((r) => r.sessionId === 'rel-3')!.id, 'once')
+    await waiting
   })
 })
