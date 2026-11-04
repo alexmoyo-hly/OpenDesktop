@@ -156,9 +156,11 @@ const SCENARIOS: Scenario[] = [
   },
   {
     name: 'plan',
+    // Six parts, each its own call: the reminder only starts past six calls without a list.
     turns: [
-      'Tres cosas, en orden: añade a util.js una función average que devuelva la media, ' +
-        'añade a test.js un test para average, y ejecuta los tests.'
+      'Seis cosas, en orden y cada una por separado: lee util.js, lee test.js, añade a util.js una ' +
+        'función average que devuelva la media, añade a test.js un test para average, ejecuta los ' +
+        'tests y, por último, ejecuta git status.'
     ],
     todos: true,
     verify: (dir) => read(dir, 'util.js').includes('average') && read(dir, 'test.js').includes('average')

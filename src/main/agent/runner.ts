@@ -71,6 +71,9 @@ import { modelAcceptsImages, readAttachment } from "../attachments";
 
 const controllers = new Map<string, AbortController>();
 
+/** Steps between readings of the pinned instructions within one turn (step 0 always). */
+const PIN_EVERY = 8;
+
 /** How many times one message may be carried on because a check found it unfinished. */
 const MAX_COMPLETION_CHECKS = 2;
 
@@ -1711,6 +1714,9 @@ export async function runTurn(input: TurnInput): Promise<string> {
     const steered: Steered[] = [];
     const toShow: string[] = [];
     let opening = 0;
+    // Messages this turn has added between steps, so a typed message's place among the turn's own is known.
+    let added = 0;
+    let budgetNoted = false;
     const result = streamText({
       model: resolved.model,
       system: systemText,
@@ -1764,110 +1770,112 @@ export async function runTurn(input: TurnInput): Promise<string> {
        * cache — is untouched. The ceiling stays as the backstop it should be.
        */
       prepareStep: async ({ messages: soFar, stepNumber, steps: done }) => {
+        /*
+         * What this returns is where the next step starts: the SDK carries it on.
+         * So everything here is added once, at the end, and never re-added — which
+         * also keeps the prefix, and the provider's cache, the same from step to
+         * step. Re-adding it every step piled up copies (found live: a message
+         * typed mid-turn reached the model three times).
+         */
         if (stepNumber === 0) opening = soFar.length;
+        const notes: string[] = [];
         // Typed while the turn works: it joins here, after the last step's results.
         const typed = stepNumber > 0 ? takeQueued(session.id) : [];
         if (typed.length > 0) {
           const said = typed.join("\n\n");
-          steered.push({ at: soFar.length - opening, text: said });
+          // Its place among the turn's own messages, for the conversation as saved.
+          steered.push({ at: soFar.length - opening - added, text: said });
           toShow.push(said);
+          notes.push(said);
         }
-        const withSaid = withSteering(soFar, opening, steered, (content) => ({
-          role: "user" as const,
-          content,
-        }));
-        const changed = dropReasoning || steered.length > 0;
-        const base = dropReasoning
-          ? pruneMessages({ messages: withSaid, reasoning: "all" })
-          : withSaid;
-        // Last thing read on every step, so a long turn cannot drift from it; never saved.
-        const pinned = config.pinned
-          ? [{ role: "user" as const, content: `<pinned>${config.pinned}</pinned>` }]
-          : [];
-        // The first step is the one the conversation already opened with.
-        if (stepNumber === 0) {
-          if (pinned.length > 0) return { messages: [...base, ...pinned] };
-          return changed ? { messages: base } : {};
-        }
-        const notes: string[] = [];
-        // The person's check for this folder, after a step that changed a file.
-        const edited = done
-          .at(-1)
-          ?.toolResults.some(
-            (r) =>
-              r.toolName === "write" ||
-              r.toolName === "edit" ||
-              (r.toolName === "bash" &&
-                typeof (r.input as { command?: unknown }).command === "string" &&
-                changesFiles((r.input as { command: string }).command)),
-          );
-        if (edited && verifyCommand) {
-          const failed = await runVerify({
-            command: verifyCommand,
-            runtime,
-            cwd: session.cwd,
-            sessionId: session.id,
-            messageId: assistant.id,
-            environmentId: session.environmentId,
-            agentId: agent.id,
-            signal: controller.signal,
-          });
-          if (failed) notes.push(failed);
-        }
-        const { count: repeats, call: repeated } = repeatedCalls(done);
-        if (repeats >= LOOP_WARN_AT) {
-          notes.push(
-            `<loop>You have made the same call ${repeats} times in a row with the same result: ` +
-              `${repeated.slice(0, 200)}. It will not change. Use what you already have: answer, ` +
-              `or try something different. The turn stops at ${LOOP_STOP_AT}.</loop>`,
-          );
-        }
-        const ceiling = config.maxTurnTokens ?? 0;
-        if (ceiling > 0) {
-          const used = spent();
-          if (used >= ceiling * 0.6) {
-            const left = Math.max(0, ceiling - used);
+        if (stepNumber > 0) {
+          // The person's check for this folder, after a step that changed a file.
+          const edited = done
+            .at(-1)
+            ?.toolResults.some(
+              (r) =>
+                r.toolName === "write" ||
+                r.toolName === "edit" ||
+                (r.toolName === "bash" &&
+                  typeof (r.input as { command?: unknown }).command === "string" &&
+                  changesFiles((r.input as { command: string }).command)),
+            );
+          if (edited && verifyCommand) {
+            const failed = await runVerify({
+              command: verifyCommand,
+              runtime,
+              cwd: session.cwd,
+              sessionId: session.id,
+              messageId: assistant.id,
+              environmentId: session.environmentId,
+              agentId: agent.id,
+              signal: controller.signal,
+            });
+            if (failed) notes.push(failed);
+          }
+          const { count: repeats, call: repeated } = repeatedCalls(done);
+          // Every step of a loop, on purpose: it must be the last thing read before the stop,
+          // and the copies are bounded by LOOP_STOP_AT, unlike the budget note's.
+          if (repeats >= LOOP_WARN_AT) {
             notes.push(
-              `<budget>This turn has been charged for ${used.toLocaleString("en-US")} tokens of ` +
-                `the ${ceiling.toLocaleString("en-US")} it may spend; about ` +
-                `${left.toLocaleString("en-US")} are left. Bring what you are doing to a close and ` +
-                `report what you have — findings, what is still open, and what you would do next. ` +
-                `Do not start anything new, and do not re-read what you have already read.</budget>`,
+              `<loop>You have made the same call ${repeats} times in a row with the same result: ` +
+                `${repeated.slice(0, 200)}. It will not change. Use what you already have: answer, ` +
+                `or try something different. The turn stops at ${LOOP_STOP_AT}.</loop>`,
+            );
+          }
+          const ceiling = config.maxTurnTokens ?? 0;
+          if (ceiling > 0 && !budgetNoted) {
+            const used = spent();
+            if (used >= ceiling * 0.6) {
+              budgetNoted = true;
+              const left = Math.max(0, ceiling - used);
+              notes.push(
+                `<budget>This turn has been charged for ${used.toLocaleString("en-US")} tokens of ` +
+                  `the ${ceiling.toLocaleString("en-US")} it may spend; about ` +
+                  `${left.toLocaleString("en-US")} are left. Bring what you are doing to a close and ` +
+                  `report what you have — findings, what is still open, and what you would do next. ` +
+                  `Do not start anything new, and do not re-read what you have already read.</budget>`,
+              );
+            }
+          }
+          if (
+            silentCalls >= SILENT_CALLS_BEFORE_NUDGE &&
+            progressNudges < MAX_PROGRESS_NUDGES
+          ) {
+            const calls = silentCalls;
+            progressNudges++;
+            silentCalls = 0;
+            notes.push(
+              `<progress>That is ${calls} tool calls since you last said anything to the user. ` +
+                `Before the next one, write one short line — what you are doing, or what you have ` +
+                `found — then carry on. A sentence, not a report: the reader has been watching ` +
+                `blocks arrive with no account of what they add up to.</progress>`,
+            );
+          }
+          // Rules in a tool description were not enough for DeepSeek: past a few calls, ask once.
+          const calls = done.reduce((n, step) => n + step.toolCalls.length, 0);
+          const keepsList = done.some((step) => step.toolCalls.some((call) => call.toolName === "todo"));
+          if (!planReminded && calls >= PLAN_AFTER_CALLS && !keepsList) {
+            planReminded = true;
+            notes.push(
+              `<plan>This is turning into several steps. Call the todo tool now with the steps you see, ` +
+                `keep one in_progress, and update it as you finish each.</plan>`,
             );
           }
         }
-        if (
-          silentCalls >= SILENT_CALLS_BEFORE_NUDGE &&
-          progressNudges < MAX_PROGRESS_NUDGES
-        ) {
-          const calls = silentCalls;
-          progressNudges++;
-          silentCalls = 0;
-          notes.push(
-            `<progress>That is ${calls} tool calls since you last said anything to the user. ` +
-              `Before the next one, write one short line — what you are doing, or what you have ` +
-              `found — then carry on. A sentence, not a report: the reader has been watching ` +
-              `blocks arrive with no account of what they add up to.</progress>`,
-          );
+        // Read again every few steps, so a long turn does not drift from them; never saved.
+        if (config.pinned && stepNumber % PIN_EVERY === 0) {
+          notes.push(`<pinned>${config.pinned}</pinned>`);
         }
-        // Rules in a tool description were not enough for DeepSeek: past a few calls, ask once.
-        const calls = done.reduce((n, step) => n + step.toolCalls.length, 0);
-        const keepsList = done.some((step) => step.toolCalls.some((call) => call.toolName === "todo"));
-        if (!planReminded && calls >= PLAN_AFTER_CALLS && !keepsList) {
-          planReminded = true;
-          notes.push(
-            `<plan>This is turning into several steps. Call the todo tool now with the steps you see, ` +
-              `keep one in_progress, and update it as you finish each.</plan>`,
-          );
-        }
-        if (notes.length === 0 && pinned.length === 0) {
-          return changed ? { messages: base } : {};
-        }
+        const base = dropReasoning
+          ? pruneMessages({ messages: soFar, reasoning: "all" })
+          : soFar;
+        if (notes.length === 0) return dropReasoning ? { messages: base } : {};
+        added += notes.length;
         return {
           messages: [
             ...base,
             ...notes.map((content) => ({ role: "user" as const, content })),
-            ...pinned,
           ],
         };
       },

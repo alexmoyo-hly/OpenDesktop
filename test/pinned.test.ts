@@ -25,7 +25,9 @@ describe('pinned instructions', () => {
       )
       await runTurn({ sessionId: session.id, userText: 'say hi' })
       expect(seen.length).toBeGreaterThanOrEqual(2)
-      for (const step of seen) expect(lastMessage(step)).toContain('Answer in Spanish')
+      expect(lastMessage(seen[0])).toContain('Answer in Spanish')
+      // Once in the turn's view, however many steps: the SDK carries it into each later step.
+      for (const step of seen) expect((JSON.stringify(step.prompt).match(/Answer in Spanish/g) ?? []).length).toBe(1)
       const history = readFileSync(join(DATA_DIR, 'history', `${session.id}.json`), 'utf8')
       expect(history).not.toContain('Answer in Spanish')
     } finally {
@@ -45,5 +47,24 @@ describe('pinned instructions', () => {
     expect(normalizeConfig({ pinned: '  Be brief.  ' }).pinned).toBe('Be brief.')
     expect(normalizeConfig({ pinned: '   ' }).pinned).toBeUndefined()
     expect(normalizeConfig({ pinned: 42 }).pinned).toBeUndefined()
+  })
+})
+
+describe('notes added between steps', () => {
+  // The SDK keeps them for the steps after, so a note re-sent on every step piled up copies.
+  test('the budget note is said once, not once more per step', async () => {
+    const original = loadConfig()
+    saveConfig({ ...original, maxTurnTokens: 10_000 })
+    try {
+      const session = newSession({ autoApprove: true })
+      const seen: Captured[] = []
+      const call = (n: number) => ({ calls: [{ tool: 'bash', input: { command: `echo ${n}`, description: 'x' } }] })
+      useModel(scriptedModel([call(1), call(2), call(3), call(4), { text: 'done' }], seen, () => ({ input: 2_000, output: 10 })))
+      await runTurn({ sessionId: session.id, userText: 'go' })
+      const last = JSON.stringify(seen.at(-1)?.prompt)
+      expect((last.match(/<budget>/g) ?? []).length).toBe(1)
+    } finally {
+      saveConfig(original)
+    }
   })
 })

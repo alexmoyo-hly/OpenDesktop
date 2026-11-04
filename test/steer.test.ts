@@ -51,6 +51,25 @@ describe('a message sent while a turn works', () => {
     expect(isRunning(session.id)).toBe(false)
   })
 
+  // Found live: the SDK keeps what prepareStep returns for the next step, so re-inserting it each step piled copies up.
+  test('is read once on every later step, not once more per step', async () => {
+    const session = newSession({ autoApprove: true })
+    const seen: Captured[] = []
+    const call = (n: number) => ({ calls: [{ tool: 'bash', input: { command: `echo ${n}`, description: 'x' } }] })
+    useModel(
+      scriptedModel(
+        [{ calls: [{ tool: 'bash', input: { command: 'sleep 0.6', description: 'wait' } }] }, call(1), call(2), call(3), { text: 'done' }],
+        seen
+      )
+    )
+    const turn = runTurn({ sessionId: session.id, userText: 'go' })
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    queueFollowUp(session.id, 'one more thing')
+    await turn
+    const copies = (step: Captured) => (JSON.stringify(step.prompt).match(/one more thing/g) ?? []).length
+    expect(seen.slice(1).map(copies)).toEqual(seen.slice(1).map(() => 1))
+  })
+
   test('sent during the last step, it still goes as a turn of its own once this one ends', async () => {
     const session = newSession({ autoApprove: true })
     const seen: Captured[] = []
