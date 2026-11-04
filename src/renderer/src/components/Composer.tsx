@@ -1044,7 +1044,7 @@ export function Composer({ session }: { session: Session }): ReactNode {
          * the right.
          */}
         <div data-footer className="mt-1.5 flex items-center gap-x-2.5 px-1">
-          <div className="flex min-w-0 flex-1 items-center gap-x-2.5 overflow-hidden">
+          <div className="flex min-w-[62px] flex-1 items-center gap-x-2.5 overflow-hidden">
             {/*
              * Just the icon when the folder is the conversation's own: the path
              * is `…/workspaces/94adVYh3JLDa`, which is an id nobody typed and
@@ -1062,7 +1062,7 @@ export function Composer({ session }: { session: Session }): ReactNode {
                     : `${session.cwd} — click to change it, ⌘R to search for one`
               }
               onClick={() => openFolderPicker(session.id)}
-              className="text-ink-500 hover:text-ink-200 flex min-w-0 shrink items-center gap-1.5 text-[11.5px]"
+              className="text-ink-500 hover:text-ink-200 hidden min-w-0 shrink items-center gap-1.5 text-[11.5px] @[360px]:flex"
             >
               {/* On a branch of its own the path is `…/worktrees/<id>`, which is
                 an id nobody typed. The branch is the name of the work. */}
@@ -1102,20 +1102,24 @@ export function Composer({ session }: { session: Session }): ReactNode {
               </span>
             ) : null}
 
-            <Picker
-              title="Environment"
-              value={session.environmentId}
-              onChange={(next) => {
-                const cwd = config?.environment[next]?.cwd;
-                patch({ environmentId: next, ...(cwd ? { cwd } : {}) });
-              }}
-              options={environments.map((e) => ({
-                value: e.id,
-                label: e.name,
-              }))}
-            />
+            {/* In a docked pane these give way, so the two switches that change
+              what the agent may do stay on the line. */}
+            <span className="hidden @[360px]:contents">
+              <Picker
+                title="Environment"
+                value={session.environmentId}
+                onChange={(next) => {
+                  const cwd = config?.environment[next]?.cwd;
+                  patch({ environmentId: next, ...(cwd ? { cwd } : {}) });
+                }}
+                options={environments.map((e) => ({
+                  value: e.id,
+                  label: e.name,
+                }))}
+              />
 
-            <SavingsChip session={session} />
+              <SavingsChip session={session} />
+            </span>
 
             <ApprovalChip session={session} />
 
@@ -1123,7 +1127,9 @@ export function Composer({ session }: { session: Session }): ReactNode {
 
             {/* Only when servers are declared: a control for a thing you do not
               have is furniture. */}
-            <ToolServerChip session={session} />
+            <span className="hidden @[360px]:contents">
+              <ToolServerChip session={session} />
+            </span>
           </div>
 
           {/* The right-hand end: what is answering, how hard it is trying, and

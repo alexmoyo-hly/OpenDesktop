@@ -1,4 +1,5 @@
 import clsx from 'clsx'
+import { Gauge } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Session } from '@shared/types'
 import { DEFAULT_EFFORT, EFFORT_LEVELS, canReason, effortLevel, reasoningLevel } from '@shared/effort'
@@ -69,7 +70,9 @@ export function EffortDial({ session }: { session: Session }): ReactNode {
           open ? 'bg-ink-800 text-ink-200' : 'text-ink-500 hover:text-ink-200 hover:bg-ink-850'
         )}
       >
-        {level.label}
+        {/* A docked pane has no room for the word; the tooltip and the panel still say it. */}
+        <span className="hidden @[360px]:inline">{level.label}</span>
+        <Gauge aria-label={level.label} className="h-3.5 w-3.5 @[360px]:hidden" />
       </button>
 
       {open ? (

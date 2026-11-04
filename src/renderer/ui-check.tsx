@@ -2407,6 +2407,23 @@ async function run(): Promise<void> {
       },
     );
 
+    // Found live: with Files docked, the auto-approve and plan switches were clipped off the line.
+    const left = dockedRow?.firstElementChild as HTMLElement | null;
+    const switches = ['[aria-label="Asks before acting"], [aria-label="Auto-approve is on"]', '[aria-label="Plan first"], [aria-label="Plan mode is on"]'].map(
+      (selector) => docked.querySelector(selector) as HTMLElement | null,
+    );
+    check(
+      "and so do the auto-approve and plan switches",
+      Boolean(left) &&
+        switches.every(
+          (chip) => chip !== null && chip.getBoundingClientRect().right <= left!.getBoundingClientRect().right + 1,
+        ),
+      {
+        left: Math.round(left?.getBoundingClientRect().right ?? 0),
+        chips: switches.map((chip) => Math.round(chip?.getBoundingClientRect().right ?? -1)),
+      },
+    );
+
     // The path is what gives way, because it is the one thing here that is
     // long, repetitive and already in the title bar.
     const narrow = mount(
