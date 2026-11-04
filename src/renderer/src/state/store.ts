@@ -206,6 +206,9 @@ const api = (): Window["opendesktop"] => window.opendesktop;
 
 let toastSeq = 0;
 
+/** How long a note stays up; a warning or an error stays until it is dismissed. */
+export const TOAST_MS = 4000;
+
 /**
  * Where the pending write of each conversation's unsent text lives.
  *
@@ -819,10 +822,11 @@ export const useStore = create<State>((set, get) => ({
     set({ config, models, keyStatus });
   },
 
-  pushToast: (level, message) =>
-    set({
-      toasts: [...get().toasts, { id: ++toastSeq, level, message }].slice(-4),
-    }),
+  pushToast: (level, message) => {
+    const id = ++toastSeq;
+    set({ toasts: [...get().toasts, { id, level, message }].slice(-4) });
+    if (level === "info") setTimeout(() => get().dismissToast(id), TOAST_MS);
+  },
 
   dismissToast: (id) =>
     set({ toasts: get().toasts.filter((t) => t.id !== id) }),

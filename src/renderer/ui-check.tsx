@@ -20,7 +20,7 @@ import type {
   Message,
   Session,
 } from "@shared/types";
-import { useStore } from "./src/state/store";
+import { TOAST_MS, useStore } from "./src/state/store";
 import { BlockCard } from "./src/components/BlockCard";
 import { ApprovalCard } from "./src/components/ApprovalCard";
 import { Mentions } from "./src/components/Markdown";
@@ -928,6 +928,18 @@ async function run(): Promise<void> {
       widths,
     );
     useStore.setState({ messages: {} });
+  }
+
+  section("toasts");
+  {
+    // Found live: "Saved the conversation to …" sat over the composer for minutes.
+    useStore.setState({ toasts: [] });
+    useStore.getState().pushToast("info", "Saved it");
+    useStore.getState().pushToast("error", "It broke");
+    await new Promise((resolve) => setTimeout(resolve, TOAST_MS + 200));
+    const left = useStore.getState().toasts.map((t) => t.message);
+    check("a note goes away on its own, an error stays until dismissed", JSON.stringify(left) === '["It broke"]', left);
+    useStore.setState({ toasts: [] });
   }
 
   section("exporting a conversation");
