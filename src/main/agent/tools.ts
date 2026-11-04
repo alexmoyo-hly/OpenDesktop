@@ -4,7 +4,14 @@ import { basename, relative } from 'node:path'
 import { homedir } from 'node:os'
 import type { AgentConfig, AppConfig, Block, Permissions } from '@shared/types'
 import { type Savings } from '@shared/savings'
-import { PermissionDenied, decide, isGranted, pathsWrittenOutside, requestApproval } from '../approvals'
+import {
+  PermissionDenied,
+  decide,
+  isGranted,
+  pathsWrittenOutside,
+  requestApproval,
+  withoutPrompts
+} from '../approvals'
 import { diffStats, renderDiff } from '../diff'
 import { shellQuote, type Runtime } from '../runtime'
 import {
@@ -118,8 +125,16 @@ interface PermissionSpec {
  * runs, then asks, then writes — and asks with exactly the same wording,
  * denylist and session grants as every other one.
  */
+// The conversation's switch, read now: it can be flipped while a turn runs. Never flipped, the turn's value stands.
+function autoNow(ctx: ToolContext): boolean {
+  if (ctx.runtime.kind === 'container') return false
+  const session = store.getSession(ctx.sessionId)
+  return (session ? store.rootOf(session).autoApprove : undefined) ?? ctx.autoApprove === true
+}
+
 async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpec): Promise<void> {
-  const decision = decide(ctx.permissions, spec.key, spec.command)
+  const auto = autoNow(ctx)
+  const decision = decide(auto ? withoutPrompts(ctx.permissions) : ctx.permissions, spec.key, spec.command)
   if (decision.mode === 'deny') {
     store.updateBlock(ctx.sessionId, block.id, {
       status: 'error',
@@ -131,8 +146,8 @@ async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpe
     throw new PermissionDenied(spec.detail, decision.deniedBy ?? `${spec.key} is set to deny`)
   }
 
-  const outsideWrite = (spec.writesOutside?.length ?? 0) > 0 && !ctx.autoApprove
-  const mode = (spec.outsideCwd || outsideWrite) && decision.mode === 'allow' && !ctx.autoApprove ? 'ask' : decision.mode
+  const outsideWrite = (spec.writesOutside?.length ?? 0) > 0 && !auto
+  const mode = (spec.outsideCwd || outsideWrite) && decision.mode === 'allow' && !auto ? 'ask' : decision.mode
   const needsAsk =
     mode === 'ask' &&
     (outsideWrite ||

@@ -9,7 +9,7 @@ import {
 import { bus } from "./bus";
 import { rawConfig } from "./config";
 import { logLine } from "./log";
-import { getSession, listMessages, listSessions } from "./store";
+import { getSession, listMessages, listSessions, rootOf } from "./store";
 
 /**
  * Telling somebody a turn ended, from the app itself.
@@ -131,17 +131,6 @@ function lastFailure(sessionId: string): string | undefined {
   const messages = listMessages(sessionId);
   const last = messages.filter((message) => message.role === "assistant").at(-1);
   return last?.parts.filter((part) => part.type === "error").at(-1)?.text;
-}
-
-/** The conversation a person actually opened: a subagent's top-level parent. */
-function rootOf(session: Session): Session {
-  let current = session;
-  for (let depth = 0; current.parentSessionId && depth < 10; depth += 1) {
-    const parent = getSession(current.parentSessionId);
-    if (!parent) break;
-    current = parent;
-  }
-  return current;
 }
 
 function show(session: Session, kind: NoticeKind): void {

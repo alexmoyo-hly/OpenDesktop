@@ -120,6 +120,17 @@ export function getSession(id: string): Session | undefined {
   return sessions.get(id)?.session;
 }
 
+/** The conversation a person actually opened: a subagent's top-level parent. */
+export function rootOf(session: Session): Session {
+  let current = session;
+  for (let depth = 0; current.parentSessionId && depth < 10; depth += 1) {
+    const parent = getSession(current.parentSessionId);
+    if (!parent) break;
+    current = parent;
+  }
+  return current;
+}
+
 export function createSession(input: {
   title?: string;
   cwd: string;

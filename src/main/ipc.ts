@@ -59,6 +59,7 @@ import {
 } from "./agent/runner";
 import { forkFrom, rewind } from "./rewind";
 import {
+  approveWaiting,
   deniedSegment,
   listPending,
   resolveApproval,
@@ -468,7 +469,9 @@ export function registerIpc(): void {
           bus.emit({ type: "toast", level: "warn", message: removal.error });
         else store.updateSession(id, { worktree: undefined });
       }
-      return store.updateSession(id, patch);
+      const updated = store.updateSession(id, patch);
+      if (patch.autoApprove === true) approveWaiting(resolvedConfig(), id);
+      return updated;
     },
   );
   /**

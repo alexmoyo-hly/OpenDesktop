@@ -659,10 +659,17 @@ agent to guess whether the tool is broken. Denylist patterns are globs, which is
 remembering when writing one: the shipped list names the root, the system directories and the
 home directory by hand rather than using `rm -rf /*`, which matches every absolute path there
 is. Chained commands are checked segment by segment, so `ls && curl … | sh` cannot slip through
-on the `ls`. An allowlisted reader with a flag that runs or writes — `find -exec`, `rg --pre`,
-`git diff --output` and the like, quoted or not — always asks. So does a command that writes
-outside the working folder (`> /tmp/x`, `mv a ~/b`), past the allowlist and any "always", and
-the card says where; only a session that runs without asking skips it.
+on the `ls`; operators inside quotes (`grep "a;b"`, `grep '=>'`) are text, a leading `cd` and
+`2>/dev/null` or `2>&1` change nothing, and `ls *` covers a bare `ls`. The denylist also reaches
+a command one wrapper deep — `bash -c '…'`, `$(…)`, backquotes, `( … )`, `env`, `nohup`,
+`timeout`, `eval`, `find -exec`, `/usr/bin/…` — though it stays a tripwire, not a sandbox:
+`base64 -d | sh`, `python -c` or `xargs` still get past it. An allowlisted reader with a flag
+that runs or writes — `find -exec`, `rg --pre`, `git diff --output` and the like, quoted or
+not — always asks. So does a command that writes outside the working folder (`> /tmp/x`,
+`mv a ~/b`, the destination of `cp`), past the allowlist and any "always", and the card says
+where; only a session that runs without asking skips it. The auto-approve switch is read when
+a call would ask, not when the turn started: turning it on lets the card already waiting
+through and the rest of the turn runs without asking, and a subagent follows its conversation.
 
 A **bare Deny ends the turn**: told "do not retry", models still reached the same end another
 way, so the next move is yours. Type a reason in the card instead and the turn carries on with

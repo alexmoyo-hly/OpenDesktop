@@ -37,8 +37,8 @@ import { effectivePermissions, resolvedConfig } from "../config";
 import { bus } from "../bus";
 import {
   PermissionDenied,
+  autoApproving,
   cancelSessionApprovals,
-  withoutPrompts,
 } from "../approvals";
 import { resolveModel } from "../providers";
 import { getRuntime, type Runtime } from "../runtime";
@@ -1363,9 +1363,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
     // an exploit is the opposite of the "explicit supervision" the whole feature
     // is built around, so the container kind overrides the switch.
     const autoApprove =
-      runtime.kind === "container"
-        ? false
-        : (session.autoApprove ?? config.autoApprove ?? false);
+      runtime.kind === "container" ? false : autoApproving(config, session.id);
     const savings = await announceSavingsProblems({
       config,
       sessionId: session.id,
@@ -1417,14 +1415,12 @@ export async function runTurn(input: TurnInput): Promise<string> {
       // model ends up with five schemas instead of a dozen.
       agent: harness,
       /*
-       * The session's own permissions. Auto-approve is read from the session,
-       * falling back to the app's default, and it only ever removes the
-       * prompt: `deny` stays denied and the denylist is checked before any of
-       * this is consulted.
+       * The session's own permissions, as configured. Auto-approve is applied
+       * when a call would ask (`askPermission`), so flipping the switch reaches
+       * a turn already running; it only ever removes the prompt: `deny` stays
+       * denied and the denylist is checked before any of this is consulted.
        */
-      permissions: autoApprove
-        ? withoutPrompts(effectivePermissions(config, agent.id))
-        : effectivePermissions(config, agent.id),
+      permissions: effectivePermissions(config, agent.id),
       autoApprove,
       sessionId: session.id,
       environmentId: session.environmentId,

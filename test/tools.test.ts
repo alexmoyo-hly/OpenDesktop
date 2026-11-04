@@ -48,7 +48,7 @@ describe('reading outside the working directory', () => {
   }
 
   function sessionContext(autoApprove = false): ToolContext {
-    const session = newSession()
+    const session = newSession({ autoApprove })
     return { ...context(getRuntime('local')), sessionId: session.id, cwd: session.cwd, autoApprove }
   }
 
