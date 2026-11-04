@@ -34,6 +34,7 @@ import {
   type Savings,
 } from "@shared/savings";
 import { NeighbourBar } from "./NeighbourBar";
+import { Markdown } from "./Markdown";
 import { ScopeGate, ForensicLine } from "./ScopeGate";
 import { ContextMeter } from "./ContextMeter";
 import { ToolServerChip } from "./ToolServerChip";
@@ -575,6 +576,44 @@ function AttachmentChip({
   );
 }
 
+const SIDE_QUESTION =
+  "Ask on the side: sees this conversation, is not added to it, and does not stop a turn.";
+
+type Aside = { question: string; answer?: string; error?: string };
+
+/** The question in `/btw <question>`, or null for anything else. */
+function sideQuestion(value: string): string | null {
+  return /^\/btw\s+(\S[\s\S]*)$/.exec(value)?.[1].trim() ?? null;
+}
+
+/** A side answer: shown once above the box, never part of the conversation. */
+function AsideCard({ aside, onDismiss }: { aside: Aside; onDismiss: () => void }): ReactNode {
+  return (
+    <div className="border-ink-700 bg-ink-850/60 mb-2 rounded-lg border px-3 py-2 text-[12.5px]">
+      <div className="flex items-start gap-2">
+        <span className="text-ink-500 flex-1 truncate">btw · {aside.question}</span>
+        <button
+          type="button"
+          aria-label="Dismiss the side answer"
+          onClick={onDismiss}
+          className="text-ink-600 hover:text-ink-300"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+      <div className="text-ink-200 mt-1 max-h-60 overflow-y-auto">
+        {aside.error ? (
+          <span className="text-bad">{aside.error}</span>
+        ) : aside.answer ? (
+          <Markdown text={aside.answer} />
+        ) : (
+          <span className="text-ink-500">Thinking…</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Composer({ session }: { session: Session }): ReactNode {
   /*
    * What is typed belongs to the conversation, not to this component.
@@ -641,14 +680,20 @@ export function Composer({ session }: { session: Session }): ReactNode {
           colour: agent.color,
         }));
     }
-    return skills
-      .filter((skill) => hit(skill.id, skill.name))
-      .slice(0, 8)
-      .map((skill) => ({
-        key: skill.id,
-        label: `/${skill.id}`,
-        description: skill.description,
-      }));
+    const builtIn: Suggestion[] = hit("btw", "side question")
+      ? [{ key: "btw", label: "/btw", description: SIDE_QUESTION }]
+      : [];
+    return [
+      ...builtIn,
+      ...skills
+        .filter((skill) => hit(skill.id, skill.name))
+        .slice(0, 8)
+        .map((skill) => ({
+          key: skill.id,
+          label: `/${skill.id}`,
+          description: skill.description,
+        })),
+    ];
   }, [skills, agents, query, menu]);
 
   const syncMenu = (value: string, caret: number): void => {
@@ -721,9 +766,36 @@ export function Composer({ session }: { session: Session }): ReactNode {
   const managed = isManager(session.agentId);
   const model = models.find((m) => m.ref === session.model);
 
+  const [aside, setAside] = useState<Aside | null>(null);
+  useEffect(() => {
+    setAside(null);
+  }, [session.id]);
+
+  const askAside = (question: string): void => {
+    setAside({ question });
+    void window.opendesktop.sessions
+      .aside(session.id, question)
+      .then((reply) =>
+        setAside((current) =>
+          current?.question !== question
+            ? current
+            : reply && "text" in reply
+              ? { question, answer: reply.text }
+              : { question, error: reply?.error ?? "No answer." },
+        ),
+      );
+  };
+
   const submit = (): void => {
     const value = text.trim();
     if (!value && attachments.length === 0) return;
+    const side = sideQuestion(value);
+    if (side) {
+      setText("");
+      setMenu(null);
+      askAside(side);
+      return;
+    }
     /*
      * Sending while it works queues the message rather than refusing it: the
      * thought is now, and the turn may have ten minutes left. Attachments wait
@@ -783,6 +855,8 @@ export function Composer({ session }: { session: Session }): ReactNode {
         {inSandbox ? <ForensicLine session={session} /> : null}
         <NeighbourBar session={session} />
         <ChangesBar session={session} />
+
+        {aside ? <AsideCard aside={aside} onDismiss={() => setAside(null)} /> : null}
 
         {attachError ? (
           <div className="border-warn/40 bg-warn/10 text-warn mb-2 flex items-start gap-2 rounded-lg border px-3 py-1.5 text-[11.5px]">
@@ -944,7 +1018,9 @@ export function Composer({ session }: { session: Session }): ReactNode {
 
         {busy && (text.trim() || (session.queuedFollowUps?.length ?? 0) > 0) ? (
           <div className="text-ink-500 mt-1.5 px-1 text-[11.5px]">
-            {text.trim()
+            {sideQuestion(text.trim())
+              ? "↵ asks this on the side: the turn carries on and never sees it."
+              : text.trim()
               ? "↵ sends this to the agent at its next step, without stopping the turn."
               : `${session.queuedFollowUps?.length} message${
                   (session.queuedFollowUps?.length ?? 0) === 1 ? "" : "s"

@@ -240,6 +240,11 @@ const api = {
       ipcRenderer.invoke("session:fork", id, target),
     compact: (id: string): Promise<boolean> =>
       ipcRenderer.invoke("session:compact", id),
+    aside: (
+      id: string,
+      question: string,
+    ): Promise<{ text: string } | { error: string }> =>
+      ipcRenderer.invoke("session:aside", id, question),
     rewind: (
       id: string,
       messageId: string,

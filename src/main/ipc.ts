@@ -60,6 +60,7 @@ import {
   allowAndRetry,
 } from "./agent/runner";
 import { acceptSuggestion, dismissSuggestion, recordApproval, suggestions } from "./learn";
+import { askAside } from "./aside";
 import { rehearsePolicy } from "./auto-policy";
 import { exportSession } from "./export";
 import { forkFrom, rewind } from "./rewind";
@@ -610,6 +611,9 @@ export function registerIpc(): void {
     },
   );
   ipcMain.handle("session:compact", (_e, id: string) => compactNow(id));
+  ipcMain.handle("session:aside", (_e, id: string, question: string) =>
+    askAside(id, question),
+  );
   ipcMain.handle("session:rewind", (_e, id: string, messageId: string) =>
     rewind(id, messageId),
   );

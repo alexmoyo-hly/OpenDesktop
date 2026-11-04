@@ -12,6 +12,8 @@ import { join } from 'node:path'
 import { defaultConfig, loadConfig, saveConfig, setAgentLoader } from './config'
 import { listAgents, seedBuiltins } from './agents'
 import { queueFollowUp, runTurn } from './agent/runner'
+import { askAside, type AsideAnswer } from './aside'
+import { getHistory } from './history'
 import { logPath } from './log'
 import * as store from './store'
 
@@ -110,6 +112,8 @@ interface Scenario {
   todos?: boolean
   /** Run in plan mode: read-only until a plan is approved. */
   planMode?: boolean
+  /** A side question (/btw) asked while the first turn works, and what its answer must say. */
+  aside?: { afterMs: number; question: string; expect: RegExp }
 }
 
 const SCENARIOS: Scenario[] = [
@@ -172,6 +176,12 @@ const SCENARIOS: Scenario[] = [
     verify: (dir, answer) => !read(dir, 'util.js').includes('average') && /\n\s*1[.)]/.test(answer)
   },
   {
+    name: 'aside',
+    turns: ['Ejecuta `sleep 10 && echo marca-7781` y dime lo que imprime.'],
+    aside: { afterMs: 5000, question: '¿Qué comando estás ejecutando ahora? Solo el comando.', expect: /sleep 10/ },
+    verify: (_dir, answer) => answer.includes('marca-7781')
+  },
+  {
     name: 'follow-up',
     turns: ['Lee util.js y dime en una frase qué hace.', '¿Y qué devuelve si le paso una lista vacía?'],
     verify: (_dir, answer) => /\b0\b|cero|zero/i.test(answer)
@@ -207,10 +217,23 @@ async function run(model: string, scenario: Scenario): Promise<TurnReport[]> {
     const began = Date.now()
     const steer = index === 0 ? scenario.steer : undefined
     const timer = steer ? setTimeout(() => queueFollowUp(session.id, steer.text), steer.afterMs) : null
+    const side = index === 0 ? scenario.aside : undefined
+    const asked = side
+      ? new Promise<AsideAnswer>((resolve) =>
+          setTimeout(() => void askAside(session.id, side.question).then(resolve), side.afterMs)
+        )
+      : null
     await runTurn({ sessionId: session.id, userText: text }).catch((error: Error) => {
       console.log(`  turn threw: ${error.message}`)
     })
     if (timer) clearTimeout(timer)
+    let asideOk = true
+    if (side && asked) {
+      const answer = await asked
+      const kept = JSON.stringify(getHistory(session.id)).includes(side.question)
+      console.log(`  side answer: ${JSON.stringify(answer).slice(0, 200)}${kept ? ' (and it leaked into the history)' : ''}`)
+      asideOk = 'text' in answer && side.expect.test(answer.text) && !kept
+    }
     const log = turnLog(session.id)
     const said = narration(session.id)
     const last = index === scenario.turns.length - 1
@@ -221,6 +244,7 @@ async function run(model: string, scenario: Scenario): Promise<TurnReport[]> {
       model,
       ok: last
         ? scenario.verify(dir, said.answer) &&
+          asideOk &&
           (!scenario.todos || (store.getSession(session.id)?.todos?.length ?? 0) > 0)
         : said.textParts > 0,
       status: store.getSession(session.id)?.status ?? 'gone',

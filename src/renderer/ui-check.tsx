@@ -686,6 +686,50 @@ async function run(): Promise<void> {
     );
   }
 
+  section("a side question (/btw)");
+  {
+    const sent: string[] = [];
+    const realSend = useStore.getState().send;
+    useStore.setState({ send: async (text: string) => void sent.push(text) });
+    REPLIES["sessions.aside"] = { text: "It said 4317." };
+    const box = mount(<Composer session={{ ...session, status: "running" }} />, 900);
+    await settle();
+    const area = box.querySelector("textarea")!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    setter.call(area, "/");
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+    await settle();
+    check("the / menu offers /btw even with no skills", (box.textContent ?? "").includes("/btw"), box.textContent);
+    setter.call(area, "/btw what port did you say?");
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+    await settle();
+    check(
+      "while it works, the line under the box says the turn carries on",
+      /on the side/.test(box.textContent ?? "") && !/next step/.test(box.textContent ?? ""),
+      (box.textContent ?? "").slice(-200),
+    );
+    area.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await settle();
+    await settle();
+    const shown = box.textContent ?? "";
+    check("it is not sent to the agent", sent.length === 0, sent);
+    check(
+      "the question and its answer are shown, and the box is cleared",
+      shown.includes("what port did you say?") && shown.includes("It said 4317.") && area.value === "",
+      shown.slice(0, 300),
+    );
+    const dismiss = box.querySelector<HTMLButtonElement>('[aria-label="Dismiss the side answer"]');
+    dismiss?.click();
+    await settle();
+    check(
+      "and it can be dismissed",
+      dismiss !== null && !(box.textContent ?? "").includes("It said 4317."),
+      (box.textContent ?? "").slice(0, 300),
+    );
+    delete REPLIES["sessions.aside"];
+    useStore.setState({ send: realSend });
+  }
+
   section("checks after editing");
   {
     const checked = mount(

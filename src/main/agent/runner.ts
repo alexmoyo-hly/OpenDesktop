@@ -71,6 +71,14 @@ import { modelAcceptsImages, readAttachment } from "../attachments";
 
 const controllers = new Map<string, AbortController>();
 
+/** The conversation as the running turn's latest step was handed it: every call already has its result. */
+const live = new Map<string, ModelMessage[]>();
+
+/** What a side question sees of a turn still running; nothing once it ends. */
+export function liveConversation(sessionId: string): ModelMessage[] | undefined {
+  return live.get(sessionId);
+}
+
 /** Steps between readings of the pinned instructions within one turn (step 0 always). */
 const PIN_EVERY = 8;
 
@@ -87,11 +95,8 @@ export function isRunning(sessionId: string): boolean {
 /**
  * Adds something to say to a turn that is already running.
  *
- * It is not delivered mid-turn. The model is in the middle of a step with a
- * prefix it has already been charged for, and splicing a message into that is
- * how a tool call ends up answered by the wrong turn. It goes as the next turn
- * instead, the moment this one stops — which is what the person meant by
- * typing it, and what other clients do with the same gesture.
+ * The running turn reads it before its next step, after the results it is
+ * waiting on; typed during the last step, it goes as a turn of its own.
  */
 export function queueFollowUp(sessionId: string, text: string): void {
   const session = store.getSession(sessionId);
@@ -217,6 +222,7 @@ export function stop(sessionId: string): void {
   cancelSessionApprovals(sessionId);
   controllers.get(sessionId)?.abort();
   controllers.delete(sessionId);
+  live.delete(sessionId);
   store.setSessionStatus(sessionId, "idle");
 }
 
@@ -1777,6 +1783,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
          * step. Re-adding it every step piled up copies (found live: a message
          * typed mid-turn reached the model three times).
          */
+        live.set(session.id, soFar);
         if (stepNumber === 0) opening = soFar.length;
         const notes: string[] = [];
         // Typed while the turn works: it joins here, after the last step's results.
@@ -2493,6 +2500,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
     if (silence) clearTimeout(silence);
     if (clock) clearTimeout(clock);
     controllers.delete(session.id);
+    live.delete(session.id);
     // A turn being carried on is still running; saying otherwise here would
     // announce a finish that has not happened, to the notification and to the
     // sidebar both.
