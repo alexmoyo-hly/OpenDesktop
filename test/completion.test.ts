@@ -55,6 +55,16 @@ describe('checking that a turn really finished', () => {
     expect(asked).toHaveLength(0)
   })
 
+  // Found live: in plan mode the check called the plan unfinished, and the agent fought the read-only gate twice.
+  test('a turn in plan mode is not checked: a written plan is the whole job', async () => {
+    const asked = judging(() => ({ done: false, missing: 'the change was not made' }))
+    const session = newSession({ autoApprove: true, planMode: true })
+    useModel(scriptedModel([work, { text: '1. Add average to util.js. 2. Test it.' }]))
+    await runTurn({ sessionId: session.id, userText: 'add average to util.js' })
+    expect(asked).toHaveLength(0)
+    expect(store.listBlocks(session.id).filter((b) => b.tool === 'completion')).toHaveLength(0)
+  })
+
   test('is off when the config says so', async () => {
     const original = loadConfig()
     saveConfig({ ...original, completionCheck: false })

@@ -2299,6 +2299,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
     if (
       !willContinue &&
       config.completionCheck !== false &&
+      !planMode &&
       (input.depth ?? 0) === 0 &&
       (callsThisTurn > 0 || continuing?.missing !== undefined) &&
       checks < MAX_COMPLETION_CHECKS &&
