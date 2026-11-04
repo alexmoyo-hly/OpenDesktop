@@ -3084,6 +3084,39 @@ async function run(): Promise<void> {
     await settle();
     check("back at the end, it follows again", distance() <= 4, distance());
 
+    // Output landing inside a block grows the transcript without a render of the
+    // chat: the reported bug was a turn whose end slid out of view while you watched.
+    const output = document.createElement("div");
+    output.style.height = "300px";
+    (el.firstElementChild as HTMLElement).appendChild(output);
+    await settle();
+    check(
+      "output growing inside a block while you are at the end keeps you at the end",
+      distance() <= 4,
+      distance(),
+    );
+    output.remove();
+    el.scrollTop = el.scrollHeight;
+    await settle();
+
+    // Approving is a click at the end too, and what follows it is the turn going on.
+    (el.firstElementChild as HTMLElement).dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    const after = document.createElement("div");
+    after.style.height = "300px";
+    (el.firstElementChild as HTMLElement).appendChild(after);
+    await settle();
+    check(
+      "a click that opens nothing, like approving, does not stop the view following",
+      distance() <= 4,
+      distance(),
+    );
+    after.remove();
+    el.scrollTop = el.scrollHeight;
+    await settle();
+
+    // What a person does to open something: they click it. That is the signal it is not output.
+    (el.firstElementChild as HTMLElement).dispatchEvent(new Event("pointerdown", { bubbles: true }));
     const filler = document.createElement("div");
     filler.style.height = "600px";
     (el.firstElementChild as HTMLElement).appendChild(filler);
