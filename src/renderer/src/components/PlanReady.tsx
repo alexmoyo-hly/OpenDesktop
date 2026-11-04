@@ -22,7 +22,7 @@ export function PlanReady({ session }: { session: Session }): ReactNode {
     return null
   }
   return (
-    <div className="border-ink-800 bg-ink-900 mx-6 mb-1.5 flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px]">
+    <div className="border-ink-800 bg-ink-900 mx-auto mb-1.5 w-[calc(100%-3rem)] max-w-[760px] flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px]">
       <span className="text-ink-300 flex-1">Plan ready. Nothing has been changed yet.</span>
       <button
         type="button"

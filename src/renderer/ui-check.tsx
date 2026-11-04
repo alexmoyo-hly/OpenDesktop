@@ -874,6 +874,30 @@ async function run(): Promise<void> {
     const stale = mount(<PlanReady session={{ ...session, planMode: true, planSince: 10, status: "idle" }} />, 700);
     await settle();
     check("nor for an answer given before plan mode was switched on", (stale.textContent ?? "") === "", stale.textContent);
+    // Found live: in a wide window the bar ran edge to edge while the box under it is 760px.
+    const wide = mount(<PlanReady session={{ ...session, planMode: true, status: "idle" }} />, 1400);
+    await settle();
+    const bar = wide.firstElementChild?.querySelector("button")?.parentElement;
+    check(
+      "and in a wide window it lines up with the box, not the window",
+      bar !== null && bar !== undefined && bar.getBoundingClientRect().width <= 760,
+      bar?.getBoundingClientRect().width,
+    );
+    const list = mount(
+      <TodoList session={{ ...session, status: "running", todos: [{ text: "Step", status: "pending" as const }] }} />,
+      1400,
+    );
+    REPLIES["learn.suggestions"] = [{ pattern: "pnpm test*", count: 4, example: "pnpm test --run" }];
+    const learnt = mount(<ApprovalSuggestion session={session} />, 1400);
+    await settle();
+    await settle();
+    delete REPLIES["learn.suggestions"];
+    const widths = [list, learnt].map((host) => (host.firstElementChild as HTMLElement | null)?.getBoundingClientRect().width ?? -1);
+    check(
+      "as do the checklist and the learned-approval bar above the box",
+      widths.every((width) => width > 0 && width <= 760),
+      widths,
+    );
     useStore.setState({ messages: {} });
   }
 

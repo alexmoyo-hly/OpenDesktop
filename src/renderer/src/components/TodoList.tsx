@@ -18,7 +18,7 @@ export function TodoList({ session }: { session: Session }): ReactNode {
   if (items.length === 0 || (done === items.length && !working)) return null
 
   return (
-    <div className="border-ink-800 bg-ink-900 mx-6 mb-1.5 rounded-lg border px-3 py-2 text-[12px]">
+    <div className="border-ink-800 bg-ink-900 mx-auto mb-1.5 w-[calc(100%-3rem)] max-w-[760px] rounded-lg border px-3 py-2 text-[12px]">
       <button
         type="button"
         onClick={() => setOpen(!open)}

@@ -35,7 +35,7 @@ export function ApprovalSuggestion({ session }: { session: Session }): ReactNode
     void done.then(() => window.opendesktop.learn.suggestions()).then((list) => setOffer(list?.[0] ?? null))
   }
   return (
-    <div className="border-ink-800 bg-ink-900 mx-6 mb-1.5 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-[12px]">
+    <div className="border-ink-800 bg-ink-900 mx-auto mb-1.5 w-[calc(100%-3rem)] max-w-[760px] flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-[12px]">
       <span className="text-ink-300 min-w-0 flex-1">
         You approved <span className="font-mono">{offer.example}</span> and the like {offer.count} times. Run{' '}
         <span className="font-mono">{offer.pattern}</span> without asking?
