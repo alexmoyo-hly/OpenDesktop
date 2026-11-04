@@ -48,7 +48,9 @@ describe('reading outside the working directory', () => {
   }
 
   function sessionContext(autoApprove = false): ToolContext {
-    const session = newSession()
+    // The stored session is what the decision reads, so the switch has to be
+    // on the thing being tested and not only on the context beside it.
+    const session = newSession({ autoApprove })
     return { ...context(getRuntime('local')), sessionId: session.id, cwd: session.cwd, autoApprove }
   }
 

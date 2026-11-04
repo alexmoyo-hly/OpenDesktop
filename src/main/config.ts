@@ -10,6 +10,9 @@ import type {
   ProviderConfig,
 } from "@shared/types";
 import { rememberSecret } from "@shared/errors";
+import { DEFAULT_LAYOUT, normalizeLayout } from "@shared/layout";
+import { COMMAND_IDS, parseKey } from "@shared/commands";
+import { RECENT_LIMIT, type RecentFolders } from "@shared/recent";
 import { PROVIDER_PRESETS } from "@shared/catalog";
 import {
   DEFAULT_NOTIFICATIONS,
@@ -311,6 +314,50 @@ function wallClock(raw: Record<string, unknown>): number {
     `honouring maxTurnMs=${written}ms from ${CONFIG_PATH} — a hard wall on the clock, ` +
     `set by hand and no longer shown in the interface`;
   return written;
+}
+
+/**
+ * The keymap as it is allowed to be: command ids this build knows, values that
+ * parse as a binding, and nothing else.
+ *
+ * An id from a newer build is dropped rather than kept, because an entry
+ * nothing can act on is a shortcut that silently does nothing — and the file
+ * it came from is the one being read here, so dropping it is the honest thing.
+ */
+function normalizeKeymap(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, string> = {};
+  for (const [id, binding] of Object.entries(raw as Record<string, unknown>)) {
+    if (!(COMMAND_IDS as readonly string[]).includes(id)) continue;
+    if (typeof binding !== "string") continue;
+    // An empty string is a deliberate "unbind this", which is a real answer
+    // and has to survive the round trip.
+    if (binding.trim() === "") {
+      out[id] = "";
+      continue;
+    }
+    if (!parseKey(binding)) continue;
+    out[id] = binding.trim();
+  }
+  return out;
+}
+
+/** Recent folders: paths only, per environment, and never more than the cap. */
+function normalizeRecent(raw: unknown): RecentFolders {
+  if (!raw || typeof raw !== "object") return {};
+  const out: RecentFolders = {};
+  for (const [environmentId, list] of Object.entries(
+    raw as Record<string, unknown>,
+  )) {
+    if (!Array.isArray(list)) continue;
+    const paths = list
+      .filter(
+        (entry): entry is string => typeof entry === "string" && entry.trim() !== "",
+      )
+      .slice(0, RECENT_LIMIT);
+    if (paths.length > 0) out[environmentId] = [...new Set(paths)];
+  }
+  return out;
 }
 
 export function normalizeConfig(raw: Record<string, unknown>): AppConfig {

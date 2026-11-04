@@ -2,9 +2,11 @@ import clsx from 'clsx'
 import { useEffect, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { activeSession, useStore } from './state/store'
+import { commandForEvent } from '@shared/commands'
 import { Sidebar } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
 import { RightDock } from './components/RightDock'
+import { BottomPanel } from './components/BottomPanel'
 import { PANE_FRAME } from './components/ui'
 import { ChatView } from './components/ChatView'
 import { SettingsPane } from './components/SettingsPane'
@@ -80,8 +82,6 @@ export default function App(): ReactNode {
   const session = useStore(activeSession)
   const bootstrap = useStore((s) => s.bootstrap)
   const applyEvent = useStore((s) => s.applyEvent)
-  const toggleSidebar = useStore((s) => s.toggleSidebar)
-  const openFolderPicker = useStore((s) => s.openFolderPicker)
 
   useEffect(() => {
     const unsubscribe = window.opendesktop.onEvent(applyEvent)
@@ -89,31 +89,92 @@ export default function App(): ReactNode {
     return unsubscribe
   }, [applyEvent, bootstrap])
 
+  /*
+   * One handler, driven by the command table rather than by keys written here.
+   *
+   * Every binding lives in `@shared/commands` and config may override any of
+   * them; this resolves a keystroke to a command and runs it. That is what
+   * makes the settings page authoritative — a shortcut added there works in
+   * the window without anything here changing — and it is why ⌘R could move
+   * from search to the recent list without touching this file.
+   *
+   * Not while a bubble-phase listener elsewhere already claimed the key: the
+   * composer, the editor and the picker each stop propagation for what they
+   * own, and those decisions were made closer to the thing being typed into.
+   */
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
-      if ((event.metaKey || event.ctrlKey) && event.key === 'b') {
-        event.preventDefault()
-        toggleSidebar()
-        return
-      }
-      /*
-       * Straight into the search half of the folder picker. The folder a
-       * session runs in is the setting people change most and the one buried
-       * deepest — six segments of path, on a machine the native dialog cannot
-       * see — so it gets a key of its own.
-       */
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'r') {
-        const current = useStore.getState()
-        const id = current.activeSessionId
-        if (current.view !== 'board' && id && !current.folderPicker) {
-          event.preventDefault()
-          openFolderPicker(id, 'search')
+      if (event.defaultPrevented) return
+      const command = commandForEvent(useStore.getState().config?.keymap, event)
+      if (!command) return
+
+      const state = useStore.getState()
+      const session = state.sessions.find((s) => s.id === state.activeSessionId)
+
+      // The folder picker and settings belong to a conversation; on the board
+      // there is nothing to point at.
+      const needsChat = command.startsWith('folder.')
+      if (needsChat && (state.view === 'board' || !session)) return
+
+      event.preventDefault()
+      switch (command) {
+        case 'sidebar.toggle':
+          state.toggleSidebar()
+          return
+        case 'panel.toggle':
+          state.togglePanel()
+          return
+        case 'panel.grow': {
+          // Open it tall rather than merely showing it: the reason to want a
+          // key for this is reading something long.
+          if (!state.layout.panelOpen) state.togglePanel()
+          state.setPanelHeight(520)
+          return
         }
+        case 'panel.terminal':
+          state.openPaneInWorkbench('terminal')
+          return
+        case 'panel.activity':
+          state.openPaneInWorkbench('activity')
+          return
+        case 'panel.background':
+          state.openPaneInWorkbench('background')
+          return
+        case 'panel.tasks':
+          state.openPaneInWorkbench('tasks')
+          return
+        case 'folder.browse':
+          if (!state.folderPicker) state.openFolderPicker(session!.id, 'browse')
+          return
+        case 'folder.recent':
+          if (!state.folderPicker) state.openFolderPicker(session!.id, 'recent')
+          return
+        case 'folder.search':
+          if (!state.folderPicker) state.openFolderPicker(session!.id, 'search')
+          return
+        case 'search.sessions':
+          state.toggleSearch()
+          return
+        case 'session.new':
+          void state.newSession({
+            cwd: session?.cwd,
+            environmentId: session?.environmentId,
+            agentId: session?.agentId,
+            model: session?.model,
+          })
+          return
+        case 'settings.open':
+          state.setSettingsOpen(true)
+          return
+        case 'editor.save':
+          // Belongs to the textarea that has focus, which handles it and
+          // prevents it; reaching here means no editor was open.
+          return
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [toggleSidebar, openFolderPicker])
+  }, [])
 
   if (!ready) {
     return (
@@ -144,6 +205,14 @@ export default function App(): ReactNode {
         </div>
         {view === 'board' ? null : <RightDock />}
       </div>
+
+      {/*
+        Below the whole row rather than inside the chat column: the panel is
+        about the window, and a terminal squeezed under one pane would move
+        every time the dock opened. The board owns the full window, so it has
+        none.
+      */}
+      {view === 'board' ? null : <BottomPanel />}
 
       <SettingsOverlay />
       <FolderPicker />

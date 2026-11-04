@@ -98,7 +98,11 @@ export function TerminalPane(): ReactNode {
         environmentId,
         cwd,
         cols: terminal.cols,
-        rows: terminal.rows
+        rows: terminal.rows,
+        // Per conversation and folder, not per mount: the pane can be moved
+        // between the side column and the panel, and a remount must reattach
+        // to the shell that is already running here.
+        scope: `${environmentId}:${cwd}`
       })
       .then(({ id, buffer }) => {
         if (disposed) {

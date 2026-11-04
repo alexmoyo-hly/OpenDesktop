@@ -1,5 +1,11 @@
 import { nanoid } from 'nanoid'
-import type { ApprovalRequest, PermissionMode, Permissions } from '@shared/types'
+import type {
+  ApprovalRequest,
+  AppConfig,
+  PermissionMode,
+  Permissions,
+  Session
+} from '@shared/types'
 import { bus } from './bus'
 
 export type ApprovalAnswer = 'once' | 'always' | 'reject'
@@ -120,6 +126,64 @@ export function requestApproval(input: {
     pending.set(request.id, { request, resolve })
     bus.emit({ type: 'approval.requested', request })
   })
+}
+
+/**
+ * Answers everything already waiting, for sessions that have just been told
+ * not to ask.
+ *
+ * Turning the switch on has to reach the card that is on screen, or the switch
+ * is a lie: the turn is stopped at a prompt, the person clicks "run without
+ * asking", and the prompt they were looking at goes on asking. Nothing else in
+ * the app can resolve it — the runner is parked on a promise, not polling.
+ *
+ * Each request is answered as `once`, not `always`: the grant map is for
+ * programs a person named one at a time, and a blanket allow is neither what
+ * was shown nor what auto-approve means. The denylist already had its say when
+ * the question was raised, so what is released here is something the session is
+ * now allowed to do anyway.
+ */
+export function releaseAutoApproved(
+  autoApproves: (sessionId: string) => boolean
+): number {
+  let released = 0
+  for (const [id, entry] of [...pending.entries()]) {
+    if (!autoApproves(entry.request.sessionId)) continue
+    pending.delete(id)
+    bus.emit({ type: 'approval.resolved', approvalId: id })
+    entry.resolve({ answer: 'once' })
+    released++
+  }
+  return released
+}
+
+/**
+ * How to decide, for a session id, whether it is auto-approving right now.
+ *
+ * Injected rather than imported because the answer lives in the config and the
+ * store, and both of those are downstream of nothing here: importing them would
+ * close a cycle through `store` → `config` → this file. The store calls back in
+ * on every change to a session's switch, so the wiring is a single call at
+ * startup instead of a list of call sites that a new path can silently miss —
+ * which is exactly how this was broken.
+ */
+let autoApprovesNow: (sessionId: string) => boolean = () => false
+
+export function setAutoApproveResolver(
+  resolve: (sessionId: string) => boolean
+): void {
+  autoApprovesNow = resolve
+}
+
+/**
+ * Releases whatever is waiting, using the live answer.
+ *
+ * Called when the session switch changes and when the app-wide default does,
+ * because either one can be the click that was meant to stop the asking. Safe
+ * to call at any time: with nothing pending it does nothing.
+ */
+export function releasePending(): number {
+  return releaseAutoApproved(autoApprovesNow)
 }
 
 /* ---------------- pattern matching ---------------- */
@@ -244,6 +308,30 @@ export function withoutPrompts(permissions: Permissions): Permissions {
     }
   }
   return out
+}
+
+/**
+ * Whether this session is running without prompts, asked at the moment of the
+ * question rather than once when the turn began.
+ *
+ * Read live because of what the switch is for: it is turned on *while* a turn
+ * sits at a prompt, and a value captured at the start of the turn made the
+ * switch look broken — the person clicked it, and the card in front of them
+ * went on asking. The same reason applies to the app-wide default: a session
+ * that never chose for itself must follow it whenever it changes, not the
+ * value the config happened to hold on the day the session was made.
+ *
+ * The sandbox is the one override that stays: an agent inside a container is
+ * being watched on purpose, so the container kind keeps the prompts whatever
+ * either switch says.
+ */
+export function autoApproveNow(
+  session: Pick<Session, 'autoApprove'> | undefined,
+  config: Pick<AppConfig, 'autoApprove'>,
+  container: boolean
+): boolean {
+  if (container) return false
+  return session?.autoApprove ?? config.autoApprove ?? false
 }
 
 export interface PermissionDecision {

@@ -61,6 +61,7 @@ import { forkFrom, rewind } from "./rewind";
 import {
   deniedSegment,
   listPending,
+  releasePending,
   resolveApproval,
   type ApprovalAnswer,
 } from "./approvals";
@@ -174,6 +175,12 @@ export function registerIpc(): void {
   ipcMain.handle("config:save", async (_e, next: AppConfig) => {
     const config = saveConfig(next);
     await reloadConfigDependents(config);
+    /*
+     * The app-wide default is the same switch seen from the settings page, and
+     * it can be the click that was meant to stop a turn asking. Sessions that
+     * chose for themselves are untouched: the resolver answers per session.
+     */
+    releasePending();
     return config;
   });
   ipcMain.handle("config:reveal", () => shell.showItemInFolder(CONFIG_PATH));
@@ -428,7 +435,15 @@ export function registerIpc(): void {
         agentId: input.agentId ?? MANAGER_AGENT,
         model: input.model ?? config.model,
         savings: input.savings ?? config.savings,
-        autoApprove: input.autoApprove ?? config.autoApprove,
+        /*
+         * Only what the caller said. Copying the app's default in here wrote
+         * today's setting into the session as though it were the session's own
+         * choice, and from then on the default was frozen: turn the app's
+         * switch on and every conversation made before it went on asking,
+         * because each one held `false` of its own. Absent means "follow the
+         * app", which is what the field already means everywhere else.
+         */
+        autoApprove: input.autoApprove,
       });
       /*
        * Pointed at its own folder once it has an id to name it after — the
@@ -917,7 +932,13 @@ export function registerIpc(): void {
     "terminal:create",
     (
       _e,
-      input: { environmentId: string; cwd: string; cols: number; rows: number },
+      input: {
+        environmentId: string;
+        cwd: string;
+        cols: number;
+        rows: number;
+        scope?: string;
+      },
     ) => createTerminal(input),
   );
   ipcMain.handle("terminal:write", (_e, id: string, data: string) =>

@@ -5,6 +5,7 @@ import {
   Bell,
   BellOff,
   Minimize2,
+  PanelBottom,
   PanelLeft,
   Plus,
   Search,
@@ -24,6 +25,7 @@ import { activeSession, useStore, type DockTab } from "../state/store";
 import { folderName } from "../lib/format";
 import { formatCost } from "@shared/cost";
 import { EditableTitle } from "./EditableTitle";
+import { PaneMenu } from "./PaneMenu";
 import { DiffSquare } from "./icons";
 
 function DockButton({
@@ -94,6 +96,8 @@ export function TopBar(): ReactNode {
   const toggleSearch = useStore((s) => s.toggleSearch);
   const view = useStore((s) => s.view);
   const openDock = useStore((s) => s.openDock);
+  const togglePanel = useStore((s) => s.togglePanel);
+  const panelOpen = useStore((s) => s.layout.panelOpen);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
   const approvals = useStore((s) => s.approvals.length);
   const backgroundRunning = useStore(
@@ -233,6 +237,21 @@ export function TopBar(): ReactNode {
         <DockButton tab="browser" title="Browser">
           <Globe className="h-4 w-4" />
         </DockButton>
+        {/* Not a dock tab: this one toggles the panel across the bottom. */}
+        <button
+          type="button"
+          title="Bottom panel (⌘J)"
+          onClick={togglePanel}
+          className={clsx(
+            "no-drag rounded-md p-1.5 transition-colors",
+            panelOpen
+              ? "bg-ink-800 text-ink-100"
+              : "text-ink-400 hover:bg-ink-850 hover:text-ink-100",
+          )}
+        >
+          <PanelBottom className="h-4 w-4" />
+        </button>
+        <PaneMenu />
 
         <div className="relative" ref={menu}>
           <button

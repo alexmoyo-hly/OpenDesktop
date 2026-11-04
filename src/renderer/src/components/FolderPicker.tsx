@@ -1,8 +1,14 @@
 import clsx from 'clsx'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Folder, FolderOpen, Home, RefreshCw, Search, X } from 'lucide-react'
+import { Clock, Folder, FolderOpen, Home, RefreshCw, Search, X } from 'lucide-react'
 import { fuzzyFilter, highlightRuns, type Match } from '@shared/fuzzy'
-import { useStore } from '../state/store'
+import {
+  filterRecent,
+  folderLabel,
+  parentOf,
+  recentFor
+} from '@shared/recent'
+import { useStore, type FolderPickerMode } from '../state/store'
 
 /**
  * Choosing a working directory on a machine that is not this one.
@@ -13,14 +19,16 @@ import { useStore } from '../state/store'
  * — with `Browse…` handing over to the OS dialog when the target happens to be
  * this machine.
  *
- * Two ways to use it, because two different things are being done:
+ * Three ways to use it, because three different things are being done:
  *
  * - **Browse**, when the shape of the tree is the point: step through it, or
- *   type a path and go. What a file dialog has always been.
+ *   type a path and go. What a file dialog has always been. ⌘O.
  * - **Search**, when the name is known and the path is not. Every directory
  *   under the home folder, fetched once and filtered as you type, fzf-style.
- *   Most of the time this is the faster way to a folder six levels down, which
- *   is why ⌘R opens straight into it.
+ *   The faster way to a folder six levels down. ⌘⇧O.
+ * - **Recent**, when the folder is one you were already in — which is most of
+ *   the time, because work clusters around a handful of trees. A short list,
+ *   searchable, with an × on each row to forget it. ⌘R.
  */
 
 /** A path, split for the breadcrumb, with the absolute path of each part. */
@@ -50,7 +58,7 @@ export function FolderPicker(): ReactNode {
     [sessions, request?.sessionId]
   )
 
-  const [mode, setMode] = useState<'browse' | 'search'>('browse')
+  const [mode, setMode] = useState<FolderPickerMode>('browse')
   const [path, setPath] = useState('')
   const [typed, setTyped] = useState('')
   const [listing, setListing] = useState<{
@@ -68,6 +76,11 @@ export function FolderPicker(): ReactNode {
   )
   const [indexing, setIndexing] = useState(false)
   const [cursor, setCursor] = useState(0)
+  const [recentQuery, setRecentQuery] = useState('')
+  const config = useStore((s) => s.config)
+  const remember = useStore((s) => s.rememberFolder)
+  const forget = useStore((s) => s.forgetFolder)
+  const recentInput = useRef<HTMLInputElement>(null)
 
   const pathInput = useRef<HTMLInputElement>(null)
   const searchInput = useRef<HTMLInputElement>(null)
@@ -94,6 +107,7 @@ export function FolderPicker(): ReactNode {
     if (!request || !session) return
     setMode(request.mode)
     setQuery('')
+    setRecentQuery('')
     setCursor(0)
     setTyped(session.cwd)
     setPath(session.cwd)
@@ -131,6 +145,7 @@ export function FolderPicker(): ReactNode {
 
   useEffect(() => {
     if (mode === 'browse') pathInput.current?.focus()
+    if (mode === 'recent') recentInput.current?.focus()
   }, [mode])
 
   const matches = useMemo(
@@ -148,15 +163,26 @@ export function FolderPicker(): ReactNode {
     results.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [cursor, mode, matches.length])
 
-  const chosen = mode === 'search' ? (matches[cursor]?.value ?? path) : path
+  // In recent mode nothing is highlighted until one is clicked, so the footer
+  // shows the folder the conversation is in — what "Select folder" would keep.
+  const recentList = recentFor(config?.recentFolders, environmentId)
+  const shownRecent = filterRecent(recentList, recentQuery)
+  const chosen =
+    mode === 'search' ? (matches[cursor]?.value ?? path) : mode === 'recent' ? path : path
 
+  /**
+   * Taking a folder is also the moment to remember it: the list is built from
+   * the folders people chose, not from the ones they looked at, or it fills up
+   * with every directory somebody wandered through on the way.
+   */
   const commit = useCallback(
     (to: string) => {
       if (!session || !to) return
       void window.opendesktop.sessions.update(session.id, { cwd: to })
+      void remember(session.environmentId, to)
       close()
     },
-    [session, close]
+    [session, close, remember]
   )
 
   useEffect(() => {
@@ -166,13 +192,13 @@ export function FolderPicker(): ReactNode {
         event.preventDefault()
         // In search, Escape steps back to browsing first: one key, two
         // thoughts — "not this search" before "not this folder".
-        if (mode === 'search') setMode('browse')
+        if (mode === 'search' || mode === 'recent') setMode('browse')
         else close()
         return
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'r') {
         event.preventDefault()
-        setMode('search')
+        setMode('recent')
       }
     }
     window.addEventListener('keydown', onKey)
@@ -191,7 +217,7 @@ export function FolderPicker(): ReactNode {
             {remote ? 'Select remote folder' : 'Select folder'}
           </h2>
           <div className="bg-ink-850 flex gap-0.5 rounded-lg p-0.5">
-            {(['browse', 'search'] as const).map((id) => (
+            {(['browse', 'recent', 'search'] as const).map((id) => (
               <button
                 key={id}
                 type="button"
@@ -203,10 +229,12 @@ export function FolderPicker(): ReactNode {
               >
                 {id === 'browse' ? (
                   <FolderOpen className="h-3.5 w-3.5" />
+                ) : id === 'recent' ? (
+                  <Clock className="h-3.5 w-3.5" />
                 ) : (
                   <Search className="h-3.5 w-3.5" />
                 )}
-                {id === 'browse' ? 'Browse' : 'Search'}
+                {id === 'browse' ? 'Browse' : id === 'recent' ? 'Recent' : 'Search'}
               </button>
             ))}
           </div>
@@ -221,7 +249,12 @@ export function FolderPicker(): ReactNode {
         </div>
 
         <div className="text-ink-600 px-5 pb-2 pt-1 text-[11.5px]">
-          {session.environmentId} · {mode === 'search' ? `under ${index?.root ?? '…'}` : path}
+          {session.environmentId} ·{' '}
+          {mode === 'search'
+            ? `under ${index?.root ?? '…'}`
+            : mode === 'recent'
+              ? `${recentFor(config?.recentFolders, session.environmentId).length} remembered`
+              : path}
         </div>
 
         {mode === 'browse' ? (
@@ -311,6 +344,78 @@ export function FolderPicker(): ReactNode {
               {!busy && !listing?.error && (listing?.dirs.length ?? 0) === 0 ? (
                 <div className="text-ink-600 px-3 py-2 text-[12px]">
                   No subdirectories. Select this one, or go up.
+                </div>
+              ) : null}
+            </div>
+          </>
+        ) : mode === 'recent' ? (
+          <>
+            <div className="flex items-center gap-2 px-5">
+              <Search className="text-ink-600 h-4 w-4 shrink-0" />
+              <input
+                ref={recentInput}
+                value={recentQuery}
+                spellCheck={false}
+                onChange={(event) => setRecentQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    // Enter takes the only plausible answer; there is no
+                    // highlight to step through, because this list is short
+                    // and is meant to be clicked.
+                    if (shownRecent.length > 0) commit(shownRecent[0])
+                  }
+                }}
+                placeholder="filter the list"
+                className="border-brand bg-ink-850 text-ink-100 placeholder:text-ink-600 min-w-0 flex-1 rounded-lg border px-3 py-2 font-mono text-[13px] outline-none"
+              />
+            </div>
+
+            <div className="text-ink-600 px-5 py-2 text-[11.5px]">
+              {shownRecent.length} of {recentList.length} · ⏎ opens the first · esc back
+            </div>
+
+            <div className="border-ink-800 mx-5 min-h-0 flex-1 overflow-y-auto rounded-lg border">
+              {shownRecent.map((entry) => (
+                <div
+                  key={entry}
+                  className="hover:bg-ink-850 group flex items-center gap-2 px-3 py-1.5"
+                >
+                  <Clock className="text-ink-500 h-3.5 w-3.5 shrink-0" />
+                  <button
+                    type="button"
+                    title={entry}
+                    onClick={() => commit(entry)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <span className="text-ink-200 block truncate text-[12.5px]">
+                      {folderLabel(entry)}
+                    </span>
+                    <span className="text-ink-600 block truncate font-mono text-[10.5px]">
+                      {parentOf(entry)}
+                    </span>
+                  </button>
+                  {/* Only the list's own item: deleting the folder is another
+                      thing entirely, and that is not what an × on a list of
+                      recent folders has ever meant. */}
+                  <button
+                    type="button"
+                    title="Forget this folder"
+                    onClick={() => void forget(environmentId, entry)}
+                    className="text-ink-700 hover:bg-ink-800 hover:text-bad shrink-0 rounded p-1"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+              {recentList.length === 0 ? (
+                <div className="text-ink-600 px-3 py-6 text-center text-[12px]">
+                  Nothing here yet. Folders appear once a conversation has been
+                  pointed at one.
+                </div>
+              ) : shownRecent.length === 0 ? (
+                <div className="text-ink-600 px-3 py-2 text-[12px]">
+                  Nothing in the list matches “{recentQuery}”.
                 </div>
               ) : null}
             </div>

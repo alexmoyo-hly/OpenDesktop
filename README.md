@@ -310,6 +310,15 @@ asked for. A handed-over file always gets a card, whatever its extension, and th
 is not drawn — the card already says it. A path that is not there is refused with the name of
 the one that is missing, because a file made by a command is wherever that command put it.
 
+### Choosing the folder
+
+`⌘O` opens the picker in **browse**, `⌘R` in **recent** and `⌘⇧O` in **search**. Browse is the
+tree, and a typed path. Search indexes every directory under the home folder once and filters it
+fzf-style — the faster way to a folder six levels down. **Recent** is the short list of folders
+this environment has been pointed at, newest first, filterable, with an × on each row to forget
+it; the list is kept per environment in `recentFolders`, because the same path means two
+different folders on two machines.
+
 ### Looking at a file
 
 A card opens its file in the pane on the right, which is a loopback HTTP server
@@ -603,17 +612,48 @@ one block per call with the exact input, the streamed output, the exit code, the
 the environment, and a real diff for writes and edits. A turn that touched files ends with an
 **Edited N files** card, and the strip above the composer tracks the working tree.
 
-**Dock** — one panel, five views, resizable by dragging its edge and toggled from the header
-icons:
+**Panes** — the window is a workbench of panes, arranged the way VS Code arranges its own.
+Each pane lives in the side column, in the panel across the bottom, or nowhere, and the menu
+beside the panel button moves it between them. The arrangement is saved to `layout` in the
+config, so the window you set up is the window you get back.
 
-| View | What it is |
+| Pane | What it is | Where it can go |
+| --- | --- | --- |
+| Files and editor | The environment's filesystem and the file you opened from it, as one pane — the tree on the left or the right (`layout.filesSide`), foldable, with its own drag handle | Side column |
+| Changes | `git status` for the session's repository, each file expandable to its diff | Side column |
+| Terminal | A real shell in the session's environment — the local machine or the remote host | Panel or side column |
+| Browser | Files the agent generated, or any `http://` URL | Panel or side column |
+| Activity | What is running now, and everything that has finished, across all sessions. Group and sort by folder, status, date, environment, agent, tool or session; filter by time range, status, environment, agent or text | Panel or side column |
+| Background tasks | Whatever the agent decided not to wait for, scoped to this chat — including what its subagents started | Panel or side column |
+
+The **panel** across the bottom holds one tab per pane that was moved into it, and its tab is
+the terminal unless something else is chosen. `⌘J` shows and hides it, `⌘\`` reveals the
+terminal wherever it is, and `⌘⇧J` opens it tall enough to read a long output. A terminal moved
+between the panel and the side column is *moved*, not restarted: the shell is one per
+conversation and folder, so the pane reattaches to the PTY that is already running and its
+scrollback comes back with it.
+
+**Keyboard** — every shortcut is a command, and every command can be rebound under
+*Settings → Keyboard* by clicking it and pressing the new keys. `Mod` means ⌘ on a Mac and Ctrl
+elsewhere, so one config works on both. The defaults:
+
+| Keys | Command |
 | --- | --- |
-| Activity | What is running now, and everything that has finished, across all sessions. Group and sort by folder, status, date, environment, agent, tool or session; filter by time range, status, environment, agent or text |
-| Background tasks | Whatever the agent decided not to wait for, scoped to this chat — including what its subagents started |
-| Terminal | A real shell in the session's environment — the local machine or the remote host |
-| Changes | `git status` for the session's repository, each file expandable to its diff |
-| Browser | Files the agent generated, or any `http://` URL |
-| Files | The environment's filesystem |
+| `⌘B` | Collapse the session list |
+| `⌘P` | Filter the session list |
+| `⌘J` | Toggle the bottom panel |
+| `⌘⇧J` | Open the panel tall |
+| `⌘\`` | Reveal the terminal |
+| `⌘O` | Select folder — browse |
+| `⌘R` | Select folder — recent |
+| `⌘⇧O` | Select folder — search |
+| `⌘⇧N` | New session in the same folder |
+| `⌘S` | Save the file in the editor |
+| `⌘,` | Settings |
+
+`⌘R` is the recent list rather than the search it used to be: the folder you want is usually
+one you have already been in. Search moved to `⌘⇧O`, beside browse, where the two halves of one
+picker belong.
 
 The terminal gets a genuine PTY without a native module: locally from a small Python helper
 (`script` cannot be used — it calls `tcgetattr` on its own stdin, which under Electron is a

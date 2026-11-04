@@ -5,6 +5,8 @@ import type { Billing } from "./routing";
 import type { LocalModelStatus } from "./local-model";
 import type { SandboxScope, SandboxStatus } from "./sandbox";
 import type { NotificationsConfig, SessionNotify } from "./notifications";
+import type { WorkbenchLayout } from "./layout";
+import type { RecentFolders } from "./recent";
 
 export type BlockStatus =
   | "pending"
@@ -420,6 +422,27 @@ export interface AppConfig {
    * about, so clicking it brings that conversation back.
    */
   notifications?: NotificationsConfig;
+  /**
+   * Where each pane lives: an edge column, the panel across the bottom, or
+   * nowhere. Written by the workbench's own menu and read at startup, so the
+   * window a person arranged is the window they get back.
+   */
+  layout?: WorkbenchLayout;
+  /**
+   * Keys this window answers to, by command id.
+   *
+   * Only overrides are written: a command absent from here follows the default
+   * in `@shared/commands`, which is what lets a default be improved later
+   * without every install having frozen the old one.
+   */
+  keymap?: Record<string, string>;
+  /**
+   * Folders each environment has been pointed at, most recent first.
+   *
+   * Per environment because these paths only mean something there: the same
+   * `/home/me/w` is two different folders on two machines.
+   */
+  recentFolders?: RecentFolders;
 }
 
 export interface Block {

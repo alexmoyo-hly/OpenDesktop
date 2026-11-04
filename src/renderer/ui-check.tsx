@@ -42,7 +42,10 @@ import { RoutingTab } from "./src/components/RoutingTab";
 import { FolderPicker } from "./src/components/FolderPicker";
 import { LocalModelSection } from "./src/components/LocalModelSection";
 import { ChatView } from "./src/components/ChatView";
+import { FilesEditorPane } from "./src/components/FilesEditorPane";
 import { PANE_FRAME } from "./src/components/ui";
+import { BottomPanel } from "./src/components/BottomPanel";
+import { DEFAULT_LAYOUT, PANE_LABEL } from "@shared/layout";
 import { SandboxSection } from "./src/components/SandboxSection";
 import { ScopeGate, ForensicLine } from "./src/components/ScopeGate";
 import { NeighbourBar } from "./src/components/NeighbourBar";
@@ -277,8 +280,23 @@ function mount(element: React.ReactElement, width?: number): HTMLElement {
   const host = document.createElement("div");
   if (width) host.style.width = `${width}px`;
   document.body.appendChild(host);
-  createRoot(host).render(element);
+  const root = createRoot(host);
+  root.render(element);
+  /*
+   * Taking the host out of the document is not unmounting it: the root keeps
+   * its components, their effects and their store subscriptions, and a pane
+   * that is still mounted refetches when a later section changes the state it
+   * watches. That produced fetch errors from panes nobody could see.
+   */
+  (host as unknown as { unmount: () => void }).unmount = () => {
+    root.unmount();
+    host.remove();
+  };
   return host;
+}
+
+function unmount(host: HTMLElement): void {
+  (host as unknown as { unmount: () => void }).unmount();
 }
 
 const settle = (): Promise<void> =>
@@ -503,6 +521,44 @@ async function run(): Promise<void> {
       (silent.textContent ?? "").includes("0%"),
       silent.textContent,
     );
+
+    /*
+     * The ring and the number have to agree.
+     *
+     * They did not: the arc was floored at half a circumference so an almost
+     * empty ring still showed something, which meant every session below
+     * halfway to a summary drew the same half circle — "it stays at half" —
+     * beside a number that said otherwise. The floor is gone, so this is
+     * checked as a proportion rather than as a colour or a class.
+     */
+    const arcShare = (host: HTMLElement): number => {
+      const arc = host.querySelectorAll("svg circle")[1];
+      const drawn = Number(
+        (arc?.getAttribute("stroke-dasharray") ?? "0 0").split(" ")[0],
+      );
+      const round = Number(arc?.getAttribute("r") ?? 1);
+      return drawn / (2 * Math.PI * round);
+    };
+    // A fifth of the 188k budget: 29% of the way to a summary, drawn as 29% of
+    // a turn. Under the old floor this was the same picture as half the window.
+    const fifth = at(37_600);
+    await settle();
+    check(
+      "an empty session draws an empty ring, not half of one",
+      arcShare(at(0)) < 0.01,
+      arcShare(at(0)),
+    );
+    check(
+      "a fifth of the way draws a fifth",
+      Math.abs(arcShare(fifth) - 0.2 / 0.7) < 0.02,
+      arcShare(fifth),
+    );
+    check(
+      "the ring agrees with the number at half the window",
+      Math.abs(arcShare(half) - 0.5 / 0.7) < 0.02,
+      arcShare(half),
+    );
+    check("and a full one a full one", arcShare(full) > 0.99, arcShare(full));
 
     useStore.setState({
       config: {
@@ -1225,7 +1281,8 @@ async function run(): Promise<void> {
       results,
     );
 
-    // Back to browsing, and ⌘R forward again.
+    // Back to browsing, and ⌘R forward again — to the recent list, which is
+    // where a folder you have used before now lives.
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     await settle();
     check(
@@ -1237,9 +1294,53 @@ async function run(): Promise<void> {
     );
     await settle();
     check(
-      "and ⌘R goes straight to the search",
-      (host.textContent ?? "").includes("↑↓ move"),
+      "and ⌘R goes to the recent folders",
+      (host.textContent ?? "").includes("remembered"),
+      host.textContent,
     );
+
+    /*
+     * The recent list itself: a folder that was chosen before, an × per row
+     * that forgets it, and a filter over the top. Reading it back out of the
+     * store rather than out of the DOM, because forgetting is a write.
+     */
+    useStore.setState({
+      config: {
+        ...useStore.getState().config!,
+        recentFolders: {
+          wk: ["/home/user/w/sec", "/home/user/w/sec/acme--global--core"],
+        },
+      },
+    });
+    useStore.getState().openFolderPicker(remote.id, "recent");
+    await settle();
+    check(
+      "a folder used before is offered back",
+      (host.textContent ?? "").includes("acme--global--core"),
+      host.textContent,
+    );
+    check(
+      "and there is one × per row to forget it",
+      [...host.querySelectorAll("button")].some(
+        (button) => button.title === "Forget this folder",
+      ),
+    );
+    const forget = [...host.querySelectorAll("button")].find(
+      (button) => button.title === "Forget this folder",
+    );
+    forget?.click();
+    await settle();
+    check(
+      "forgetting one takes it out of the list",
+      useStore.getState().config?.recentFolders?.wk?.length === 1,
+      useStore.getState().config?.recentFolders,
+    );
+
+    // The filter box narrows the list the same way the search half does.
+    const filter = [...host.querySelectorAll("input")].find(
+      (input) => input.placeholder === "filter the list",
+    );
+    check("the list has a box to filter it", filter !== undefined);
 
     useStore.setState({
       folderPicker: null,
@@ -1723,7 +1824,9 @@ async function run(): Promise<void> {
     // No token figure: the level goes to the SDK, which maps it per provider, so a budget would be a guess.
     check(
       "and it says what it will ask the model for: the level and the step ceiling",
-      /Thinking high/.test(smart) && !/\dk/.test(smart) && /60 steps/.test(smart),
+      /Thinking high/.test(smart) &&
+        !/\dk/.test(smart) &&
+        /60 steps/.test(smart),
       smart,
     );
     useStore.setState({ config: before });
@@ -2554,7 +2657,138 @@ async function run(): Promise<void> {
       [...host.querySelectorAll("button")].map((n) => n.getAttribute("title")),
     );
 
+    /*
+     * Reported: the numbers stopped matching the lines.
+     *
+     * They were one stack of digits down the left while the text beside them
+     * wrapped, so every wrapped line put the numbers below it one further out
+     * than the line they belonged to. Measured, because this is exactly the
+     * kind of thing that looks fine in a diff and wrong on screen: each number
+     * must share a top with its own line.
+     */
+    REPLIES.open = {
+      text: Array.from(
+        { length: 14 },
+        (_, i) =>
+          `${i + 1}. ${"a line long enough to wrap in a narrow pane ".repeat(3)}`,
+      ).join("\n"),
+    };
+    const wrapped = mount(<EditorPane />, 320);
+    await settle();
+    const rows = [...wrapped.querySelectorAll("pre > div")];
+    const aligned = rows.every((row, index) => {
+      const number = row.firstElementChild as HTMLElement;
+      const code = row.lastElementChild as HTMLElement;
+      return (
+        number.textContent === String(index + 1) &&
+        Math.abs(
+          number.getBoundingClientRect().top - code.getBoundingClientRect().top,
+        ) < 1
+      );
+    });
+    check(
+      "fourteen wrapped lines, each numbered on its own row",
+      rows.length === 14 && aligned,
+      rows.map((row) => row.textContent?.slice(0, 12)),
+    );
+    unmount(wrapped);
+
+    /*
+     * Reported: the column of digits changes width when a file passes nine
+     * lines, which shoves the text sideways mid-edit. So it is a floor, and two
+     * files either side of the boundary must agree on it.
+     */
+    // Mounted apart, because each is measured after a frame rather than in the
+    // tick it was rendered in: two mounts in one block cannot both be measured.
+    REPLIES.open = {
+      text: Array.from({ length: 9 }, (_, i) => `line ${i}`).join("\n"),
+    };
+    const nineLines = mount(<EditorPane />, 520);
+    await settle();
+    const nine = (
+      nineLines.querySelector("pre > div > span") as HTMLElement
+    ).getBoundingClientRect().width;
+
+    REPLIES.open = {
+      text: Array.from({ length: 99 }, (_, i) => `line ${i}`).join("\n"),
+    };
+    const ninetyNineLines = mount(<EditorPane />, 520);
+    await settle();
+    const ninetyNine = (
+      ninetyNineLines.querySelector("pre > div > span") as HTMLElement
+    ).getBoundingClientRect().width;
+    // Left mounted, these three would react to the state the next section sets
+    // and ask for a file the stub no longer answers.
+    unmount(nineLines);
+    unmount(ninetyNineLines);
+
+    check(
+      "and the column of digits does not widen at ten lines",
+      nine > 0 && Math.abs(nine - ninetyNine) < 1,
+      { nine, ninetyNine },
+    );
+
+    // Every pane this section mounted goes with it: each of them refetches
+    // whenever the store's open file changes, and the next section opens one.
+    unmount(empty);
+    unmount(host);
     delete REPLIES.open;
+    useStore.setState({ editorFile: null });
+  }
+
+  section("the file tree");
+  {
+    /*
+     * Reported: it does not look right. The row put a fixed date column and a
+     * fixed size column on a pane that is 220 wide by default, which left the
+     * name — the only thing the tree is for — about twenty-eight pixels, so
+     * every entry read as a clipped stem.
+     */
+    const saved = REPLIES.list;
+    REPLIES.list = {
+      path: "/tmp/project",
+      entries: [
+        {
+          name: "runner.ts",
+          path: "/tmp/project/src/runner.ts",
+          directory: false,
+          size: 9_614,
+          modifiedAt: Date.UTC(2026, 10, 3),
+        },
+        {
+          name: "components",
+          path: "/tmp/project/src/components",
+          directory: true,
+          size: 0,
+          modifiedAt: Date.UTC(2026, 10, 3),
+        },
+      ],
+    };
+    useStore.setState({
+      editorFile: {
+        environmentId: "local",
+        path: "/tmp/project/src/runner.ts",
+      },
+    });
+    const tree = mount(<FilesPane />, 220);
+    await settle();
+    const named = [...tree.querySelectorAll("button")].find((node) =>
+      (node.textContent ?? "").includes("runner.ts"),
+    );
+    const nameWidth = named?.getBoundingClientRect().width ?? 0;
+    check(
+      "a name still has room to be read at the default width",
+      nameWidth >= 90,
+      { nameWidth, text: tree.textContent },
+    );
+    check(
+      "and the file the editor is showing is marked as such",
+      tree.innerHTML.includes("text-ink-100") &&
+        tree.textContent!.includes("runner.ts"),
+      tree.innerHTML.slice(0, 200),
+    );
+
+    REPLIES.list = saved;
     useStore.setState({ editorFile: null });
   }
 
@@ -2788,6 +3022,81 @@ async function run(): Promise<void> {
 
     REPLIES["sessions.neighbours"] = [];
     useStore.setState({ sessions: [session] });
+  }
+
+  section("the panel across the bottom");
+  {
+    /*
+     * The terminal in this panel holds a real PTY in the main process, so the
+     * two things that can go wrong here are not visual: closing the panel must
+     * not take the shell with it, and a tab has to be reachable in one click.
+     */
+    useStore.setState({
+      layout: { ...DEFAULT_LAYOUT, panelOpen: true },
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+    const host = mount(<BottomPanel />, 900);
+    await settle();
+    const panel = host.querySelector("[data-bottom-panel]");
+    check("the panel marks itself out", panel !== null);
+    check(
+      "and is open, and showing the terminal",
+      panel !== null && getComputedStyle(panel).display === "flex",
+      panel === null ? null : getComputedStyle(panel).display,
+    );
+    check(
+      "takes its height from the layout rather than from the window",
+      panel !== null &&
+        getComputedStyle(panel).height === `${DEFAULT_LAYOUT.panelHeight}px`,
+      panel === null ? null : getComputedStyle(panel).height,
+    );
+    check(
+      "names its tabs the way the layout does",
+      panel !== null && (panel.textContent ?? "").includes(PANE_LABEL.terminal),
+      panel?.textContent,
+    );
+    check(
+      "and has a way to close the panel itself",
+      panel !== null &&
+        [...panel.querySelectorAll("button")].some(
+          (button) => button.title === "Hide the bottom panel",
+        ),
+    );
+
+    useStore.getState().togglePanel();
+    await settle();
+    check(
+      "closing it hides the panel instead of unmounting the shell",
+      panel !== null &&
+        getComputedStyle(panel).display === "none" &&
+        panel.isConnected,
+      panel === null ? null : getComputedStyle(panel).display,
+    );
+    useStore.getState().togglePanel();
+    await settle();
+
+    // A pane that the panel cannot draw still has to be closable, or the tab
+    // strip is a dead end the window cannot be got out of.
+    useStore.getState().openPaneInWorkbench("activity");
+    useStore.getState().setPanelActive("activity");
+    await settle();
+    check(
+      "a pane dragged in from elsewhere gets a tab",
+      (panel?.textContent ?? "").includes(PANE_LABEL.activity),
+      panel?.textContent,
+    );
+    useStore.getState().closePaneInWorkbench("activity");
+    await settle();
+    check(
+      "and closing it puts the terminal back in front",
+      (panel?.textContent ?? "").includes(PANE_LABEL.terminal) &&
+        !(panel?.textContent ?? "").includes(PANE_LABEL.activity),
+      panel?.textContent,
+    );
+
+    useStore.setState({ layout: { ...DEFAULT_LAYOUT, panelOpen: true } });
+    unmount(host);
   }
 
   section("the two panes of the window");
@@ -3320,6 +3629,83 @@ async function run(): Promise<void> {
       </div>,
     );
     await settle();
+  }
+
+  /*
+   * Files and the editor at the width the dock actually gives them, which is
+   * where both of this change's reported problems were: a name with no room and
+   * a column of digits that did not line up with the text.
+   */
+  if (new URLSearchParams(location.search).get("shot") === "files") {
+    document.body.innerHTML = "";
+    REPLIES.list = {
+      path: "/Users/diego.sanz/Dev/OpenDesktop/.git",
+      entries: [
+        { name: "branches", path: "/p/.git/branches", directory: true, size: 0, modifiedAt: Date.UTC(2026, 10, 3) },
+        { name: "hooks", path: "/p/.git/hooks", directory: true, size: 0, modifiedAt: Date.UTC(2026, 10, 3) },
+        { name: "info", path: "/p/.git/info", directory: true, size: 0, modifiedAt: Date.UTC(2026, 10, 3) },
+        { name: "logs", path: "/p/.git/logs", directory: true, size: 0, modifiedAt: Date.UTC(2026, 10, 3) },
+        { name: "refs", path: "/p/.git/refs", directory: true, size: 0, modifiedAt: Date.UTC(2026, 10, 3) },
+        { name: "COMMIT_EDITMSG", path: "/p/.git/COMMIT_EDITMSG", directory: false, size: 312, modifiedAt: Date.UTC(2026, 10, 3) },
+        { name: "HEAD", path: "/p/.git/HEAD", directory: false, size: 73, modifiedAt: Date.UTC(2026, 10, 3) },
+        { name: "config", path: "/p/.git/config", directory: false, size: 21, modifiedAt: Date.UTC(2026, 10, 3) },
+        { name: "index", path: "/p/.git/index", directory: false, size: 16_700, modifiedAt: Date.UTC(2026, 10, 3) },
+        { name: "packed-refs", path: "/p/.git/packed-refs", directory: false, size: 112, modifiedAt: Date.UTC(2026, 10, 3) },
+      ],
+    };
+    REPLIES.open = {
+      text: [
+        "[core]",
+        "\trepositoryformatversion = 0",
+        "\tfilemode = true",
+        "\tbare = false",
+        "\tlogallrefupdates = true",
+        "\tignorecase = true",
+        "\tprecomposeunicode = true",
+        "[remote \"origin\"]",
+        "\turl = git@github.com:someone/opendesktop.git",
+        "\tfetch = +refs/heads/*:refs/remotes/origin/*",
+        "[branch \"main\"]",
+        "\tremote = origin",
+        "\tmerge = refs/heads/main",
+      ].join("\n"),
+    };
+    useStore.setState({
+      editorFile: {
+        environmentId: "local",
+        path: "/Users/diego.sanz/Dev/OpenDesktop/.git/config",
+      },
+    });
+    const root = mount(
+      <div className="bg-ink-900 flex h-[420px] w-[420px] flex-col">
+        <FilesEditorPane />
+      </div>,
+    );
+    await settle();
+    /*
+     * Reported: the lines of the two panes do not line up.
+     *
+     * They are one row — the tree's address bar beside the editor's file name
+     * — so their heights have to be the same number, not two numbers that
+     * happen to come out close. Measured at the bottom border, because that is
+     * the line you see.
+     */
+    const headOf = (selector: string): HTMLElement | null =>
+      root.querySelector(selector) as HTMLElement | null;
+    const treeHead = headOf("[data-files-head]");
+    const editorHead = headOf("[data-editor-head]");
+    const bottomOf = (el: HTMLElement | null): number =>
+      el ? Math.round(el.getBoundingClientRect().bottom * 10) / 10 : -1;
+    check(
+      "the tree and the editor start their content on the same line",
+      bottomOf(treeHead) > 0 && bottomOf(treeHead) === bottomOf(editorHead),
+      {
+        treeBottom: bottomOf(treeHead),
+        editorBottom: bottomOf(editorHead),
+        treeHeight: treeHead?.getBoundingClientRect().height,
+        editorHeight: editorHead?.getBoundingClientRect().height,
+      },
+    );
   }
 
   // The editor, with a file in it.

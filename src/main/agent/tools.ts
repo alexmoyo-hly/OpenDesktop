@@ -4,7 +4,15 @@ import { basename, relative } from 'node:path'
 import { homedir } from 'node:os'
 import type { AgentConfig, AppConfig, Block, Permissions } from '@shared/types'
 import { type Savings } from '@shared/savings'
-import { PermissionDenied, decide, isGranted, pathsWrittenOutside, requestApproval } from '../approvals'
+import {
+  PermissionDenied,
+  autoApproveNow,
+  decide,
+  isGranted,
+  pathsWrittenOutside,
+  requestApproval,
+  withoutPrompts
+} from '../approvals'
 import { diffStats, renderDiff } from '../diff'
 import { shellQuote, type Runtime } from '../runtime'
 import {
@@ -119,7 +127,28 @@ interface PermissionSpec {
  * denylist and session grants as every other one.
  */
 async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpec): Promise<void> {
-  const decision = decide(ctx.permissions, spec.key, spec.command)
+  /*
+   * Read at the moment of the question, not when the turn began.
+   *
+   * The switch is turned on *while* a turn is stopped at a prompt, and a value
+   * captured at the top of the turn made that click look like it did nothing:
+   * the card in front of the person went on asking. Reading it here also makes
+   * the app-wide default apply to a session that never chose for itself, rather
+   * than the value the config held on the day that session was made.
+   */
+  const autoApprove = autoApproveNow(
+    store.getSession(ctx.sessionId),
+    ctx.config,
+    ctx.runtime.kind === 'container'
+  )
+  // The context already holds the session's permissions; this only lifts the
+  // `ask` out of them. Lifted here rather than in the runner so that the
+  // answer is the one the switch has at this moment, not the one it had when
+  // the turn started — the switch is usually flipped while a turn is parked on
+  // exactly this question.
+  const permissions = autoApprove ? withoutPrompts(ctx.permissions) : ctx.permissions
+
+  const decision = decide(permissions, spec.key, spec.command)
   if (decision.mode === 'deny') {
     store.updateBlock(ctx.sessionId, block.id, {
       status: 'error',
@@ -131,8 +160,8 @@ async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpe
     throw new PermissionDenied(spec.detail, decision.deniedBy ?? `${spec.key} is set to deny`)
   }
 
-  const outsideWrite = (spec.writesOutside?.length ?? 0) > 0 && !ctx.autoApprove
-  const mode = (spec.outsideCwd || outsideWrite) && decision.mode === 'allow' && !ctx.autoApprove ? 'ask' : decision.mode
+  const outsideWrite = (spec.writesOutside?.length ?? 0) > 0 && !autoApprove
+  const mode = (spec.outsideCwd || outsideWrite) && decision.mode === 'allow' && !autoApprove ? 'ask' : decision.mode
   const needsAsk =
     mode === 'ask' &&
     (outsideWrite ||

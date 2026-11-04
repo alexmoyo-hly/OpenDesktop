@@ -16,10 +16,11 @@ import type {
   Session,
   SessionStatus,
 } from "@shared/types";
-import { DATA_DIR } from "./config";
+import { DATA_DIR, rawConfig } from "./config";
 import { copyHistory } from "./history";
 import type { Savings } from "@shared/savings";
 import { bus } from "./bus";
+import { autoApproveNow, releasePending, setAutoApproveResolver } from "./approvals";
 
 const SESSIONS_DIR = join(DATA_DIR, "sessions");
 const INDEX_PATH = join(DATA_DIR, "index.json");
@@ -33,6 +34,19 @@ interface SessionFile {
 const sessions = new Map<string, SessionFile>();
 const dirty = new Set<string>();
 let flushTimer: NodeJS.Timeout | null = null;
+
+/*
+ * The switch is read live, and the answer needs both the config and the stored
+ * session — neither of which this file may import the other way round without
+ * closing a cycle. So the store hands the answer over once, here.
+ */
+setAutoApproveResolver((sessionId) => {
+  const session = getSession(sessionId);
+  const config = rawConfig();
+  const container =
+    config.environment[session?.environmentId ?? ""]?.kind === "container";
+  return autoApproveNow(session, config, container);
+});
 
 function ensureDirs(): void {
   mkdirSync(SESSIONS_DIR, { recursive: true });
@@ -167,6 +181,14 @@ export function updateSession(
   Object.assign(file.session, patch, { updatedAt: Date.now() });
   markDirty(id);
   bus.emit({ type: "session.updated", session: file.session });
+  /*
+   * A turn parked at a prompt is waiting on a promise, not polling anything, so
+   * changing the switch has to reach it from here. Doing it in this one place —
+   * rather than in the interface that happens to flip it — is the difference
+   * between a fix and a fix for one code path: the store is what every caller
+   * goes through, including the tests.
+   */
+  if (patch.autoApprove !== undefined) releasePending();
   return file.session;
 }
 
