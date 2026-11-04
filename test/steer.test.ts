@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeAll, describe, expect, test } from 'vitest'
 import { isRunning, queueFollowUp, runTurn } from '../src/main/agent/runner'
-import { DATA_DIR } from '../src/main/config'
+import { DATA_DIR, loadConfig, saveConfig } from '../src/main/config'
+import { mendToolPairs } from '../src/main/history'
 import * as store from '../src/main/store'
 import { boot, newSession, scriptedModel, useModel, type Captured } from './helpers'
 
@@ -81,5 +82,55 @@ describe('a message sent while a turn works', () => {
       await new Promise((resolve) => setTimeout(resolve, 50))
     }
     expect(seen.some((step) => text(step).includes('and one more thing'))).toBe(true)
+  })
+})
+
+describe('the conversation a steered turn leaves behind', () => {
+  const pairsHold = (messages: { role: string; content: unknown }[]): boolean =>
+    messages.every((message, i) => {
+      const calls = Array.isArray(message.content)
+        ? (message.content as { type: string }[]).filter((part) => part.type === 'tool-call').length
+        : 0
+      return calls === 0 || messages[i + 1]?.role === 'tool'
+    })
+
+  // Found live: with pinned instructions on, the typed message was saved between a call and its result.
+  test('keeps every tool call next to its result, and the next turn works', async () => {
+    const original = loadConfig()
+    saveConfig({ ...original, pinned: 'Be brief.' })
+    try {
+      const session = newSession({ autoApprove: true })
+      useModel(
+        scriptedModel([
+          { calls: [{ tool: 'bash', input: { command: 'sleep 0.6', description: 'wait' } }] },
+          { calls: [{ tool: 'bash', input: { command: 'echo after', description: 'x' } }] },
+          { text: 'done' }
+        ])
+      )
+      const turn = runTurn({ sessionId: session.id, userText: 'go' })
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      queueFollowUp(session.id, 'and this too')
+      await turn
+      const saved = JSON.parse(readFileSync(join(DATA_DIR, 'history', `${session.id}.json`), 'utf8'))
+      expect(pairsHold(saved)).toBe(true)
+      useModel(scriptedModel([{ text: 'second turn fine' }]))
+      await runTurn({ sessionId: session.id, userText: 'next' })
+      expect(store.getSession(session.id)?.status).toBe('idle')
+    } finally {
+      saveConfig(original)
+    }
+  })
+
+  test('a conversation already saved with a message between a call and its result is mended when read', () => {
+    const broken = [
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: [{ type: 'tool-call', toolCallId: 't1', toolName: 'bash', input: {} }] },
+      { role: 'user', content: 'typed mid-turn' },
+      { role: 'tool', content: [{ type: 'tool-result', toolCallId: 't1', toolName: 'bash', output: { type: 'text', value: 'ok' } }] },
+      { role: 'assistant', content: 'done' }
+    ]
+    const mended = mendToolPairs(broken as never) as { role: string; content: unknown }[]
+    expect(pairsHold(mended)).toBe(true)
+    expect(mended.map((m) => m.role)).toEqual(['user', 'assistant', 'tool', 'user', 'assistant'])
   })
 })
