@@ -504,6 +504,24 @@ async function run(): Promise<void> {
       silent.textContent,
     );
 
+    // The arc is the share: 1% was drawn half full, a fraction used as the floor of a length.
+    const arcOf = (host: HTMLElement): number => {
+      const [length, whole] = (
+        host.querySelectorAll("circle")[1]?.getAttribute("stroke-dasharray") ?? "0 1"
+      )
+        .split(" ")
+        .map(Number);
+      return length / whole;
+    };
+    const little = at(1_400);
+    await settle();
+    check(
+      "a nearly empty window draws a nearly empty ring",
+      arcOf(little) < 0.05,
+      arcOf(little),
+    );
+    check("and a half-way one, half of it", Math.abs(arcOf(half) - 0.67) < 0.05, arcOf(half));
+
     useStore.setState({
       config: {
         ...useStore.getState().config!,

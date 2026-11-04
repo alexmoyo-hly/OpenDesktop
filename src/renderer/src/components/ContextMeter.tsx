@@ -40,7 +40,7 @@ function Ring({ share, tone }: { share: number; tone: 'calm' | 'near' | 'over' }
         fill="none"
         strokeWidth="1.6"
         strokeLinecap="round"
-        strokeDasharray={`${Math.max(0.5, Math.min(1, share)) * circumference} ${circumference}`}
+        strokeDasharray={`${Math.max(0.5, Math.min(1, share) * circumference)} ${circumference}`}
         className={clsx(
           'transition-[stroke-dasharray] duration-500',
           tone === 'over' ? 'stroke-warn' : tone === 'near' ? 'stroke-brand' : 'stroke-ink-500'
