@@ -69,6 +69,21 @@ describe('a conversation as Markdown', () => {
     expect(md).toContain('Blocked by the auto-approve policy')
     expect(md).toContain('Stopped a loop.')
   })
+
+  // Found live: an edit plan mode refused was exported as "Edited util.js".
+  test('an edit or write that did not happen is not called one', () => {
+    const refused = transcriptMarkdown(
+      session,
+      [message({ id: 'm2', parts: [{ type: 'block', blockId: 'r1' }, { type: 'block', blockId: 'r2' }] })],
+      [
+        block({ id: 'r1', tool: 'edit', input: { path: 'util.js' }, status: 'error', error: 'Not run: plan mode' }),
+        block({ id: 'r2', tool: 'write', input: { path: 'notes.md' }, status: 'error', error: 'Not run: plan mode' })
+      ]
+    )
+    expect(refused).not.toMatch(/\*\*Edited\*\*|\*\*Wrote\*\*/)
+    expect(refused).toContain("**Couldn't edit** `util.js`")
+    expect(refused).toContain("**Couldn't write** `notes.md`")
+  })
 })
 
 describe('exporting a session', () => {

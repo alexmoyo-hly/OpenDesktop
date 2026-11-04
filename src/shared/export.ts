@@ -30,7 +30,9 @@ function blockMarkdown(block: Block): string {
     out.push(fence('sh', command ?? block.title))
     if (block.output.trim()) out.push(fence('', cut(block.output)))
   } else if (block.tool === 'edit' || block.tool === 'write') {
-    out.push(`**${block.tool === 'edit' ? 'Edited' : 'Wrote'}** \`${path ?? block.title}\``)
+    const happened = block.status !== 'error' && block.status !== 'canceled'
+    const verb = block.tool === 'edit' ? (happened ? 'Edited' : "Couldn't edit") : happened ? 'Wrote' : "Couldn't write"
+    out.push(`**${verb}** \`${path ?? block.title}\``)
     if (block.output.trim()) out.push(fence(/^[-+@]/m.test(block.output) ? 'diff' : '', cut(block.output)))
   } else {
     out.push(`**${block.tool}** ${path ? `\`${path}\`` : block.title}`)
