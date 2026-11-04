@@ -153,18 +153,19 @@ export function EditorPane(): ReactNode {
             ))}
           </div>
 
-          <div className="relative min-w-0 flex-1">
+          <div className="relative flex-1">
             {/*
               * Two layers on the same grid: the colours underneath, the real
               * textarea on top with transparent text and a visible caret. The
               * textarea is what has focus, selection and undo — none of which
               * is worth reimplementing — and the layer under it never has to
-              * know anything about editing.
+              * know anything about editing. Neither wraps: the gutter has one
+              * row per line, and a wrapped line put every number below it out.
               */}
             <pre
               ref={back}
               aria-hidden
-              className={clsx('m-0 whitespace-pre-wrap break-words px-3 py-2', GRID)}
+              className={clsx('m-0 whitespace-pre px-3 py-2', GRID)}
             >
               {spans.map((span, index) => (
                 <span key={index} className={COLOUR[span.kind]}>
@@ -176,6 +177,7 @@ export function EditorPane(): ReactNode {
             <textarea
               ref={area}
               value={text}
+              wrap="off"
               spellCheck={false}
               onChange={(event) => setText(event.target.value)}
               onKeyDown={(event) => {
@@ -195,7 +197,7 @@ export function EditorPane(): ReactNode {
                 }
               }}
               className={clsx(
-                'absolute inset-0 resize-none whitespace-pre-wrap break-words bg-transparent px-3 py-2 text-transparent caret-ink-100 outline-none',
+                'absolute inset-0 resize-none overflow-hidden whitespace-pre bg-transparent px-3 py-2 text-transparent caret-ink-100 outline-none',
                 GRID
               )}
             />

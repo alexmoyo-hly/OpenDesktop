@@ -15,6 +15,7 @@ import { createRoot } from "react-dom/client";
 import type {
   AppEvent,
   ApprovalRequest,
+  AutoModePolicy,
   Block,
   Message,
   Session,
@@ -25,8 +26,13 @@ import { ApprovalCard } from "./src/components/ApprovalCard";
 import { Mentions } from "./src/components/Markdown";
 import { DocumentCard } from "./src/components/DocumentCard";
 import { Composer } from "./src/components/Composer";
-import { EditedFiles } from "./src/components/Transcript";
+import { EditedFiles, ToolGroup } from "./src/components/Transcript";
 import { ContextMeter } from "./src/components/ContextMeter";
+import { RowInput } from "./src/components/settings-ui";
+import { AutoModeRules } from "./src/components/AutoModeRules";
+import { SUGGESTED_AUTO_MODE } from "@shared/auto-mode";
+import { money } from "./src/lib/settings";
+import { duration, tokens } from "./src/lib/format";
 import { ToolServerChip } from "./src/components/ToolServerChip";
 import { ToolServersTab } from "./src/components/ToolServersTab";
 import { HooksTab } from "./src/components/HooksTab";
@@ -542,6 +548,120 @@ async function run(): Promise<void> {
       "and invents no percentage when the model declares no window",
       (unknown.textContent ?? "") === "",
       unknown.textContent,
+    );
+  }
+
+  section("the auto-approve rules");
+  {
+    const saves: (AutoModePolicy | undefined)[] = [];
+    const empty = mount(<AutoModeRules policy={undefined} onSave={(next) => saves.push(next)} />);
+    await settle();
+    const suggest = [...empty.querySelectorAll("button")].find((b) => /suggested/i.test(b.textContent ?? ""));
+    check("with no rules, offers the suggested ones", suggest !== undefined, empty.textContent?.slice(0, 120));
+    suggest?.click();
+    await settle();
+    check(
+      "and one click saves them",
+      saves.at(-1)?.deny.length === SUGGESTED_AUTO_MODE.deny.length,
+      saves.at(-1),
+    );
+
+    const written = mount(
+      <AutoModeRules
+        policy={{ environment: [], allow: [], deny: ["Git Push: no pushing"] }}
+        onSave={(next) => saves.push(next)}
+      />,
+    );
+    await settle();
+    const deny = written.querySelector<HTMLTextAreaElement>('textarea[aria-label="Deny"]')!;
+    check("shows the rules already written, one per line", deny?.value === "Git Push: no pushing", deny?.value);
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    deny.focus();
+    setter.call(deny, "Git Push: no pushing\n\n  Credentials: hands off  \n");
+    deny.dispatchEvent(new Event("input", { bubbles: true }));
+    await settle();
+    // The check window has no focus, so blur() fires nothing; React's onBlur listens for focusout.
+    deny.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    await settle();
+    check(
+      "and saves what is typed when the box is left, a rule per non-empty line",
+      JSON.stringify(saves.at(-1)?.deny) === JSON.stringify(["Git Push: no pushing", "Credentials: hands off"]),
+      saves.at(-1)?.deny,
+    );
+  }
+
+  section("numbers at the edge of their unit");
+  {
+    const took = (ms: number): string => duration(block({ createdAt: 0, startedAt: 0, endedAt: ms }));
+    check("a duration that rounds to a minute is shown in minutes", took(59_900) === "59.9s" && took(59_960) === "1m 0s", [took(59_900), took(59_960)]);
+    check("a token count that rounds to a million is shown in millions", tokens(999_940) === "999.9k" && tokens(999_950) === "1.00M", [tokens(999_940), tokens(999_950)]);
+  }
+
+  section("a run of tool calls, collapsed");
+  {
+    const group = mount(
+      <ToolGroup
+        blocks={[
+          block({ id: "g1", tool: "edit", title: "edit", input: { path: "src/foo.ts" } }),
+          block({ id: "g2", tool: "mcp", title: "close_issue", input: {} }),
+          block({ id: "g3", tool: "mcp", title: "list_issues", input: {} }),
+          block({ id: "g4", tool: "bulk_read", title: "bulk_read", input: {} }),
+        ]}
+      />,
+    );
+    await settle();
+    check(
+      "counts the tools it has no word for, instead of leaving them out",
+      (group.textContent ?? "").includes("Updated foo.ts, used 3 tools"),
+      group.textContent,
+    );
+  }
+
+  section("a number typed into a settings field");
+  {
+    // What a person does: one key at a time onto whatever the field shows, each one parsed and saved.
+    const typeInto = async (input: HTMLInputElement, text: string): Promise<void> => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      input.focus();
+      setter.call(input, "");
+      for (const key of text) {
+        setter.call(input, input.value + key);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await settle();
+      }
+      input.blur();
+      await settle();
+    };
+    // Like the settings pages: every keystroke saves a fresh config object, so the page re-renders.
+    const Field = ({ parse }: { parse: (text: string) => number | undefined }): React.ReactElement => {
+      const [saved, setSaved] = React.useState<{ value?: number }>({});
+      return (
+        <div>
+          <RowInput
+            value={saved.value === undefined ? "" : String(saved.value)}
+            onChange={(text) => setSaved({ value: parse(text) })}
+          />
+          <span data-saved>{String(saved.value)}</span>
+        </div>
+      );
+    };
+
+    const price = mount(<Field parse={money} />);
+    await settle();
+    await typeInto(price.querySelector("input")!, "0.25");
+    check(
+      "a price keeps its decimal point while it is typed",
+      price.querySelector("[data-saved]")?.textContent === "0.25",
+      price.querySelector("[data-saved]")?.textContent,
+    );
+
+    const clamped = mount(<Field parse={(text) => Math.max(10_000, Number(text) || 10_000)} />);
+    await settle();
+    await typeInto(clamped.querySelector("input")!, "500000");
+    check(
+      "and a floor applied as it is typed does not eat the first digit",
+      clamped.querySelector("[data-saved]")?.textContent === "500000",
+      clamped.querySelector("[data-saved]")?.textContent,
     );
   }
 
@@ -2461,6 +2581,22 @@ async function run(): Promise<void> {
       "the pane says what happened instead of throwing",
       (missing.textContent ?? "").includes("no such file or directory"),
       missing.textContent?.slice(0, 120),
+    );
+
+    // A turn updates the session every few seconds; the pane must not reload (and leave the folder) each time.
+    const entry = (name: string) => ({ name, path: `/w/${name}`, directory: false, size: 1, modifiedAt: 0 });
+    REPLIES.list = { path: "/w", entries: [entry("first.txt")] };
+    const browsing = mount(<FilesPane />, 420);
+    await settle();
+    REPLIES.list = { path: "/w", entries: [entry("reloaded.txt")] };
+    useStore.setState({
+      sessions: useStore.getState().sessions.map((s) => ({ ...s, status: "running" as const })),
+    });
+    await settle();
+    check(
+      "a session update that is not a move does not reload the pane",
+      (browsing.textContent ?? "").includes("first.txt") && !(browsing.textContent ?? "").includes("reloaded.txt"),
+      browsing.textContent?.slice(0, 160),
     );
     REPLIES.list = saved;
   }

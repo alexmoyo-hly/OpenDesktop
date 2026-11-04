@@ -19,6 +19,9 @@ function filePath(block: Block): string | null {
   return typeof block.input.path === 'string' ? block.input.path : null
 }
 
+// The tools the summary has a verb for; the rest (MCP, bulk_read, …) are counted as tools.
+const NAMED_TOOLS = new Set(['write', 'edit', 'bash', 'read', 'grep', 'glob', 'list', 'fetch'])
+
 function count(n: number, one: string, many: string): string {
   return n === 1 ? `a ${one}` : `${n} ${many}`
 }
@@ -59,6 +62,9 @@ function summarize(blocks: Block[]): string {
 
   const fetches = by('fetch')
   if (fetches.length > 0) parts.push(`fetched ${count(fetches.length, 'page', 'pages')}`)
+
+  const other = blocks.filter((b) => !NAMED_TOOLS.has(b.tool)).length
+  if (other > 0) parts.push(`used ${count(other, 'tool', 'tools')}`)
 
   if (parts.length === 0) return 'Ran a tool'
   const text = parts.join(', ')

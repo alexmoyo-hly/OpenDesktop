@@ -297,7 +297,7 @@ function SavingsChip({ session }: { session: Session }): ReactNode {
                 </div>
               ) : null}
               <div className="text-ink-600 px-2 py-1 text-[11px]">
-                Neither is Direct. Defaults are in Settings → Models.
+                Neither is Direct. Defaults are in Settings → Routing & limits.
               </div>
             </div>,
             document.body,

@@ -103,6 +103,12 @@ describe('the approval question reads as a sentence', () => {
     expect(approvalQuestion(ask('Negative test of checker and fence parity'), 'Auto')).toBe('Allow Auto to run this command?')
     expect(approvalDetail(ask('Negative test of checker and fence parity'))).toBe('Negative test of checker and fence parity')
   })
+
+  test('a tool server call names the server and the tool, whatever the server is called', () => {
+    const mcp = (detail: string) => ({ ...ask(), tool: 'mcp', detail }) as const
+    expect(approvalQuestion(mcp('Ticket tracker: close_issue'), 'Auto')).toBe('Allow Auto to use Ticket tracker: close_issue?')
+    expect(approvalQuestion(mcp('github: list_issues'), 'Auto')).toBe('Allow Auto to use github: list_issues?')
+  })
 })
 
 describe('writes outside the working folder', () => {

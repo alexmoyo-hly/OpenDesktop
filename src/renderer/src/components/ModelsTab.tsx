@@ -14,7 +14,7 @@ import {
   type Spent
 } from '@shared/routing'
 import { useStore } from '../state/store'
-import { Hint, IconButton, Row, RowInput, RowSelect, RowSlider, Section } from './settings-ui'
+import { DraftInput, Hint, IconButton, Row, RowInput, RowSelect, RowSlider, Section } from './settings-ui'
 import { LocalModelSection } from './LocalModelSection'
 import { SandboxSection } from './SandboxSection'
 import { limitLabel, money, spendLabel, useConfigDraft, useSpend } from '../lib/settings'
@@ -188,7 +188,9 @@ function ProviderSection({
       onChange({ ...provider, models: merged.models })
       setFound(
         merged.added.length === 0
-          ? `${answer.models.length} models offered, all of them already here.`
+          ? answer.models.length === 0
+            ? 'This key offers no models.'
+            : `${answer.models.length} model${answer.models.length === 1 ? '' : 's'} offered, all of them already here.`
           : `Added ${merged.added.length} of the ${answer.models.length} models this key can see` +
             `${merged.priced.length > 0 ? `, ${merged.priced.length} with prices this app publishes` : ''}` +
             `. Anything without a price needs one typed in.`
@@ -411,7 +413,7 @@ function ProviderSection({
                   }}
                   className="border-ink-800 bg-ink-850 text-ink-200 placeholder:text-ink-600 focus:border-ink-600 w-[84px] rounded-lg border px-2.5 py-1.5 font-mono text-[12px] outline-none"
                 />
-                <input
+                <DraftInput
                   value={model.price?.input !== undefined ? String(model.price.input) : ''}
                   placeholder="$ in"
                   inputMode="decimal"
@@ -423,7 +425,7 @@ function ProviderSection({
                   }}
                   className="border-ink-800 bg-ink-850 text-ink-200 placeholder:text-ink-600 focus:border-ink-600 w-[64px] rounded-lg border px-2 py-1.5 font-mono text-[12px] outline-none"
                 />
-                <input
+                <DraftInput
                   value={model.price?.output !== undefined ? String(model.price.output) : ''}
                   placeholder="$ out"
                   inputMode="decimal"
@@ -750,7 +752,7 @@ export function ModelsTab(): ReactNode {
             label="Which provider"
             description={
               creating.models && Object.keys(creating.models).length > 0
-                ? `${Object.keys(creating.models).length} models come with it, priced as the provider publishes them. Paste the key afterwards.`
+                ? `${Object.keys(creating.models).length} model${Object.keys(creating.models).length === 1 ? '' : 's'} come${Object.keys(creating.models).length === 1 ? 's' : ''} with it, priced as the provider publishes them. Paste the key afterwards.`
                 : 'Its models are asked of the key once you have stored it — prices are typed once, from the page they are published on.'
             }
           >

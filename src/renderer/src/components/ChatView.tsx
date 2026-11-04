@@ -278,7 +278,7 @@ function StatusLine({
         ✳
       </span>
       <span>{duration(seconds)}</span>
-      {total > 0 ? <span>· {tokens(total)} tokens</span> : null}
+      {total > 0 ? <span>· {tokens(total)} token{total === 1 ? '' : 's'}</span> : null}
       {/* Absent when the model has no price declared: nothing, not "$0.00". */}
       {message.usage?.cost !== undefined ? <span>· {formatCost(message.usage.cost)}</span> : null}
       {rate !== null ? <span>· {rate} tok/s</span> : null}
