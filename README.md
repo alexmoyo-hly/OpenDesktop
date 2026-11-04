@@ -690,7 +690,11 @@ refuses the call with its name and reason, and the agent is told not to work aro
 person's own words authorise it ("push it to origin"), and a subagent is judged by what the
 person asked the conversation, not by its brief, so a file that says "now push" does not count.
 Allowlisted and granted calls are not judged, the same question is asked once, and a judge that
-cannot answer hands the call back to an approval card. Settings offers a suggested set.
+cannot answer hands the call back to an approval card. Settings offers a suggested set, and
+"Try these rules on recent calls" judges the fifteen most recent calls that would have asked
+you, with the rules as typed (saved or not), and lists what they would refuse — without
+touching the live judge. Give the judge its own `model` where you can: a provider's
+per-minute limit (LiteLLM's is 30 a key and model) is otherwise shared with the agent.
 `pnpm policy:check <model>` measures a judge against thirteen cases (DeepSeek V4.1 Flash: 13/13,
 1.5–2.3 s each). The denylist still comes first: the rules are easier to add to and less certain.
 

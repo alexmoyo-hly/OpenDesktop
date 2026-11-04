@@ -5,7 +5,7 @@ import { NOTHING } from '@shared/savings'
 import type { AppConfig } from '@shared/types'
 import { createTools, type ToolContext } from '../src/main/agent/tools'
 import { listPending, resolveApproval, PermissionDenied } from '../src/main/approvals'
-import { allowOnce, resetPolicyBreaker, setPolicyJudge, type PolicyQuestion } from '../src/main/auto-policy'
+import { allowOnce, policyPaused, rehearsePolicy, resetPolicyBreaker, setPolicyJudge, type PolicyQuestion } from '../src/main/auto-policy'
 import { loadConfig, normalizeConfig, saveConfig } from '../src/main/config'
 import { allowAndRetry, runTurn } from '../src/main/agent/runner'
 import { getRuntime } from '../src/main/runtime'
@@ -259,5 +259,30 @@ describe('allow and retry', () => {
     } finally {
       saveConfig(original)
     }
+  })
+})
+
+describe('rehearsing rules on recent calls', () => {
+  // Before turning rules on, see what they would have refused among calls that really happened.
+  test('judges the calls that would have asked, with what each person asked, and leaves the real judge alone', async () => {
+    const asked = judging((question) =>
+      question.action.includes('git push') ? { allowed: false, rule: 'Git Push', reason: 'not asked' } : { allowed: true }
+    )
+    const session = newSession({ title: 'Rehearsed', autoApprove: false })
+    store.addMessage({ sessionId: session.id, role: 'user', parts: [{ type: 'text', text: 'fix the readme' }] })
+    const add = (tool: string, input: Record<string, unknown>) =>
+      store.createBlock({ sessionId: session.id, messageId: 'm', tool, title: String(input.command ?? input.path), input, cwd: session.cwd, environmentId: 'local', agentId: 'build', status: 'success' })
+    add('bash', { command: 'git push origin main' })
+    add('bash', { command: 'ls -la' })
+    add('write', { path: 'README.md' })
+    add('bash', { command: 'git push origin main' })
+
+    const results = await rehearsePolicy(loadConfig(), RULES)
+    const mine = results.filter((r) => r.sessionId === session.id)
+    expect(mine.map((r) => r.action).sort()).toEqual(['bash: git push origin main', 'write: README.md'])
+    expect(mine.find((r) => r.action.includes('push'))).toMatchObject({ allowed: false, rule: 'Git Push' })
+    expect(mine.find((r) => r.action.includes('README'))?.allowed).toBe(true)
+    expect(asked.find((q) => q.action.includes('push'))?.asked).toEqual(['fix the readme'])
+    expect(policyPaused(session.id)).toBeNull()
   })
 })

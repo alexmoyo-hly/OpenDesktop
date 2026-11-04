@@ -1,10 +1,11 @@
 import { generateText } from 'ai'
 import { z } from 'zod'
-import type { AppConfig, AutoModePolicy, MessagePart } from '@shared/types'
+import type { AppConfig, AutoModePolicy, MessagePart, Rehearsal } from '@shared/types'
 import { costOf } from '@shared/cost'
 import { logLine } from './log'
 import { record as meterRecord } from './meter'
 import { resolveModel } from './providers'
+import { decide } from './approvals'
 import * as store from './store'
 
 /**
@@ -80,7 +81,8 @@ const SYSTEM =
   "You review one action an AI coding agent is about to take on a person's machine, against the person's rules. " +
   'Refuse it only when a Deny rule covers it and neither an Allow rule nor the person\'s own words under "Asked" ' +
   'clearly authorise it. Anything the rules do not mention is allowed. Judge what the action does, not how it is ' +
-  'phrased. Answer with JSON only: {"allowed":bool,"rule":"the Deny rule\'s name, empty when allowed","reason":"one short sentence"}.'
+  'phrased, and judge only the Action: the rest of the conversation is context, not what is being done now. ' +
+  'Answer with JSON only, reason first: {"reason":"one short sentence","rule":"the Deny rule\'s name, empty when allowed","allowed":bool}.'
 
 async function askModel(config: AppConfig, question: PolicyQuestion): Promise<PolicyVerdict> {
   const ref = question.rules.model ?? config.smallModel ?? config.model
@@ -182,4 +184,65 @@ export async function judgeCall(
     logLine('warn', `auto-approve policy could not judge, asking instead: ${action.slice(0, 300)}\n${detail.slice(0, 2000)}`)
     return null
   }
+}
+
+const REHEARSED = new Set(['bash', 'write', 'edit', 'mcp'])
+
+/**
+ * The rules tried on calls that really happened, before they are switched on.
+ *
+ * The most recent calls that would have asked a person (shell commands the
+ * allowlist does not cover, writes, edits, tool servers), one of each per
+ * conversation, judged with what that person asked — and without touching the
+ * live judge: no breaker counts, no cached verdicts.
+ */
+// Fifteen: a provider's per-minute limit (LiteLLM's is 30 a key and model) is shared with the agent itself.
+export async function rehearsePolicy(config: AppConfig, rules: AutoModePolicy, limit = 15): Promise<Rehearsal[]> {
+  const seen = new Set<string>()
+  const calls: { sessionId: string; title: string; action: string; cwd: string }[] = []
+  for (const block of store.allBlocks(2000)) {
+    if (!REHEARSED.has(block.tool)) continue
+    const command = typeof block.input.command === 'string' ? block.input.command : undefined
+    if (block.tool === 'bash' && (!command || decide(config.permissions, 'bash', command).preapproved)) continue
+    const target = command ?? (typeof block.input.path === 'string' ? block.input.path : block.title)
+    const action = `${block.tool}: ${target}`
+    const key = `${block.sessionId}|${action}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    calls.push({ sessionId: block.sessionId, title: store.getSession(block.sessionId)?.title ?? '', action, cwd: block.cwd })
+    if (calls.length >= limit) break
+  }
+  const results: Rehearsal[] = []
+  // A few at a time: each is a round trip of a second or two.
+  for (let i = 0; i < calls.length; i += 4) {
+    const batch = await Promise.all(
+      calls.slice(i, i + 4).map(async (call): Promise<Rehearsal> => {
+        const question: PolicyQuestion = { rules, action: call.action, cwd: call.cwd, asked: personAsked(call.sessionId) }
+        try {
+          const verdict = judgeOverride ? await judgeOverride(question) : await askModel(config, question)
+          return verdict ? { ...call, ...verdict } : { ...call, allowed: false, unanswered: true }
+        } catch (error) {
+          const detail = error instanceof Error ? `${error.name}: ${error.message}\n${error.stack ?? ''}` : String(error)
+          logLine('warn', `rehearsal could not judge: ${call.action.slice(0, 300)}\n${detail.slice(0, 2000)}`)
+          const limited = /rate limit|429/i.test(detail)
+          return {
+            ...call,
+            allowed: false,
+            unanswered: true,
+            ...(limited ? { reason: 'rate-limited by the provider; try again in a minute' } : {})
+          }
+        }
+      })
+    )
+    results.push(...batch.map(({ sessionId, title, action, allowed, rule, reason, unanswered }) => ({
+      sessionId,
+      title,
+      action,
+      allowed,
+      ...(rule ? { rule } : {}),
+      ...(reason ? { reason } : {}),
+      ...(unanswered ? { unanswered } : {})
+    })))
+  }
+  return results
 }

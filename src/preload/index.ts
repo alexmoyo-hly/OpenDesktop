@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
   AgentConfig,
   AppConfig,
+  AutoModePolicy,
+  Rehearsal,
   AppEvent,
   ApprovalRequest,
   Attachment,
@@ -341,6 +343,10 @@ const api = {
       ipcRenderer.invoke("turn:send", sessionId, text, attachments),
     stop: (sessionId: string): Promise<void> =>
       ipcRenderer.invoke("turn:stop", sessionId),
+  },
+  /** Auto-approve rules tried on recent calls before they are relied on. */
+  policy: {
+    rehearse: (rules: AutoModePolicy): Promise<Rehearsal[]> => ipcRenderer.invoke("policy:rehearse", rules),
   },
   /** Commands approved by hand often enough to offer for the allowlist. */
   learn: {

@@ -839,6 +839,28 @@ async function run(): Promise<void> {
     delete REPLIES["learn.suggestions"];
   }
 
+  section("trying the rules on recent calls");
+  {
+    REPLIES["policy.rehearse"] = [
+      { sessionId: "s1", title: "Fix the readme", action: "bash: git push origin main", allowed: false, rule: "Git Push", reason: "nobody asked for a push" },
+      { sessionId: "s1", title: "Fix the readme", action: "write: README.md", allowed: true },
+    ];
+    const rules = mount(
+      <AutoModeRules policy={{ environment: [], allow: [], deny: ["Git Push: no pushing"] }} onSave={() => undefined} />,
+      900,
+    );
+    await settle();
+    [...rules.querySelectorAll("button")].find((b) => /recent calls/i.test(b.textContent ?? ""))?.click();
+    await settle();
+    const said = rules.textContent ?? "";
+    check(
+      "the rules can be tried on recent calls before they are relied on",
+      /Would refuse 1 of 2/.test(said) && said.includes("git push origin main") && said.includes("Git Push"),
+      said.slice(-300),
+    );
+    delete REPLIES["policy.rehearse"];
+  }
+
   section("a run of tool calls, collapsed");
   {
     const group = mount(

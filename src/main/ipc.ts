@@ -8,6 +8,7 @@ import {
   CONFIG_PATH,
   rawConfig,
   readConfigText,
+  normalizeConfig,
   resolvedConfig,
   saveConfig,
   writeConfigText,
@@ -59,6 +60,7 @@ import {
   allowAndRetry,
 } from "./agent/runner";
 import { acceptSuggestion, dismissSuggestion, recordApproval, suggestions } from "./learn";
+import { rehearsePolicy } from "./auto-policy";
 import { exportSession } from "./export";
 import { forkFrom, rewind } from "./rewind";
 import {
@@ -923,6 +925,11 @@ export function registerIpc(): void {
     },
   );
   ipcMain.handle("learn:suggestions", () => suggestions(resolvedConfig()));
+  ipcMain.handle("policy:rehearse", (_e, rules: unknown) => {
+    // Sanitised the way the config is, since these come from boxes being typed in.
+    const policy = normalizeConfig({ autoMode: rules }).autoMode;
+    return policy ? rehearsePolicy(resolvedConfig(), policy) : [];
+  });
   ipcMain.handle("learn:accept", (_e, pattern: string) => {
     acceptSuggestion(pattern);
     bus.emit({ type: "config.updated", config: rawConfig() });

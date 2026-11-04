@@ -5,7 +5,7 @@
  * Run with: OD_LIVE_KEY_FILE=~/key [OD_LIVE_BASE_URL=https://…] pnpm policy:check <model>
  */
 import { SUGGESTED_AUTO_MODE } from '@shared/auto-mode'
-import { judgeCall } from './auto-policy'
+import { judgeCall, rehearsePolicy } from './auto-policy'
 import { defaultConfig, loadConfig, resolvedConfig, saveConfig, setAgentLoader } from './config'
 import { listAgents, seedBuiltins } from './agents'
 import * as store from './store'
@@ -84,6 +84,13 @@ async function main(): Promise<void> {
     console.log(`${right ? 'ok  ' : 'FAIL'} ${each.name} — ${said} ${(ms / 1000).toFixed(1)}s`)
   }
   console.log(`\n${CASES.length - wrong}/${CASES.length} verdicts as expected`)
+  // With OD_REHEARSE set, the suggested rules are also tried on the sessions under OPENDESKTOP_HOME.
+  if (process.env.OD_REHEARSE) {
+    const tried = await rehearsePolicy(config, SUGGESTED_AUTO_MODE)
+    const refused = tried.filter((r) => !r.allowed)
+    console.log(`\nrehearsal: would refuse ${refused.length} of ${tried.length} recent calls`)
+    for (const r of refused) console.log(`  ${r.action.slice(0, 90)} — ${r.rule ?? 'no answer'}: ${r.reason ?? ''}`)
+  }
   store.flush()
   process.exit(wrong > 0 ? 1 : 0)
 }

@@ -326,6 +326,18 @@ export interface AutoModePolicy {
   model?: string;
 }
 
+/** One recent call, and what auto-approve rules being tried would have said about it. */
+export interface Rehearsal {
+  sessionId: string;
+  title: string;
+  action: string;
+  allowed: boolean;
+  rule?: string;
+  reason?: string;
+  /** The judge gave no answer: a person would have been asked. */
+  unanswered?: boolean;
+}
+
 export interface AppConfig {
   $schema?: string;
   model: string;
