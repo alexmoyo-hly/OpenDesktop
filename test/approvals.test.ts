@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { approvalDetail, approvalQuestion } from '../src/shared/approvals'
-import { decide, isGranted, listPending, pathsWrittenOutside, requestApproval, resolveApproval, splitCommand } from '../src/main/approvals'
+import { decide, isGranted, listPending, pathsWrittenOutside, requestApproval, resolveApproval, splitCommand, changesFiles } from '../src/main/approvals'
 import { defaultConfig } from '../src/main/config'
 
 async function answerAlways(sessionId: string, tool: string, command?: string): Promise<void> {
@@ -121,4 +121,13 @@ describe('writes outside the working folder', () => {
     expect(pathsWrittenOutside(cwd, 'cp /work/repo/a /work/repo/b', '/home/u')).toEqual([])
   })
 
+})
+
+describe('a shell command that changes files', () => {
+  test('is told from one that only reads, quotes and harmless redirects included', () => {
+    for (const command of ["sed -i '' 's/a/b/' f.txt", 'echo x > f.txt', 'cat a | tee b', 'mv a b', 'cd src && perl -pi -e "s/a/b/" f', 'mkdir -p out'])
+      expect(changesFiles(command), command).toBe(true)
+    for (const command of ['ls 2>/dev/null', 'grep -n "a > b" f.txt', "sed -n '1,5p' f.txt", 'git status', 'node test.js 2>&1 | tail'])
+      expect(changesFiles(command), command).toBe(false)
+  })
 })

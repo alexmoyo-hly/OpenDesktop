@@ -36,10 +36,12 @@ import { budgetFor } from "@shared/context";
 import { effectivePermissions, resolvedConfig } from "../config";
 import { bus } from "../bus";
 import { allowOnce, resetPolicyBreaker } from "../auto-policy";
+import { runVerify, verifyCommandFor } from "../verify";
 import {
   PermissionDenied,
   autoApproving,
   cancelSessionApprovals,
+  changesFiles,
 } from "../approvals";
 import { resolveModel } from "../providers";
 import { getRuntime, type Runtime } from "../runtime";
@@ -1683,6 +1685,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
         : {}),
     };
 
+    const verifyCommand = verifyCommandFor(config, session.cwd);
     // Messages typed mid-turn: where each joined the model's view, and which the transcript has yet to show.
     const steered: Steered[] = [];
     const toShow: string[] = [];
@@ -1739,7 +1742,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
        * what is left, at the end of the messages so the prefix — and the
        * cache — is untouched. The ceiling stays as the backstop it should be.
        */
-      prepareStep: ({ messages: soFar, stepNumber, steps: done }) => {
+      prepareStep: async ({ messages: soFar, stepNumber, steps: done }) => {
         if (stepNumber === 0) opening = soFar.length;
         // Typed while the turn works: it joins here, after the last step's results.
         const typed = stepNumber > 0 ? takeQueued(session.id) : [];
@@ -1766,6 +1769,30 @@ export async function runTurn(input: TurnInput): Promise<string> {
           return changed ? { messages: base } : {};
         }
         const notes: string[] = [];
+        // The person's check for this folder, after a step that changed a file.
+        const edited = done
+          .at(-1)
+          ?.toolResults.some(
+            (r) =>
+              r.toolName === "write" ||
+              r.toolName === "edit" ||
+              (r.toolName === "bash" &&
+                typeof (r.input as { command?: unknown }).command === "string" &&
+                changesFiles((r.input as { command: string }).command)),
+          );
+        if (edited && verifyCommand) {
+          const failed = await runVerify({
+            command: verifyCommand,
+            runtime,
+            cwd: session.cwd,
+            sessionId: session.id,
+            messageId: assistant.id,
+            environmentId: session.environmentId,
+            agentId: agent.id,
+            signal: controller.signal,
+          });
+          if (failed) notes.push(failed);
+        }
         const { count: repeats, call: repeated } = repeatedCalls(done);
         if (repeats >= LOOP_WARN_AT) {
           notes.push(

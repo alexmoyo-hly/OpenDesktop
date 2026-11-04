@@ -340,6 +340,20 @@ export function pathsWrittenOutside(cwd: string, command: string, home: string):
     .filter((path): path is string => path !== null && !path.startsWith('/dev/') && !inside(path))
 }
 
+/**
+ * Whether a shell command changes files, for the check after edits: models
+ * edit with `sed -i`, `tee` or a redirect as often as with the edit tool.
+ */
+export function changesFiles(command: string): boolean {
+  const syntax = unquoted(command.replace(HARMLESS_REDIRECT, ' '))
+  if (/(?:^|[^<])>/.test(syntax)) return true
+  return splitCommand(command).some((segment) => {
+    const [program, ...args] = words(unwrapped(segment))
+    if (WRITERS.has(program) || COPIERS.has(program)) return true
+    return (program === 'sed' || program === 'perl') && args.some((arg) => /^-[a-zA-Z]*i/.test(arg))
+  })
+}
+
 // Flags that turn an allowlisted reader (find, rg, git diff/log) into something that runs code or writes files.
 const RUNS_OR_WRITES = ['-exec', '-execdir', '-ok', '-okdir', '-delete', '-fprint', '-fprint0', '-fprintf', '-fls', '--pre', '--pre-glob', '--output']
 

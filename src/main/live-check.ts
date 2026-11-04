@@ -5,6 +5,7 @@
  * Run with: OD_LIVE_KEY_FILE=~/key OD_LIVE_BASE_URL=https://… pnpm live:check <model> [<model>…]
  * Writes a JSON summary to OD_LIVE_OUT when set.
  */
+import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -103,6 +104,8 @@ interface Scenario {
   verify: (dir: string, answer: string) => boolean
   /** Something typed while the first turn is working, after this long. */
   steer?: { afterMs: number; text: string }
+  /** The check run after edits in this scenario's folder (`verify` in the config). */
+  check?: string
 }
 
 const SCENARIOS: Scenario[] = [
@@ -135,6 +138,19 @@ const SCENARIOS: Scenario[] = [
     verify: (dir) => existsSync(join(dir, 'nota.txt')) && read(dir, 'nota.txt').trim() === 'bar'
   },
   {
+    name: 'verify',
+    turns: ['Renombra la función calcTotal a sumAll. El proyecto tiene que seguir funcionando.'],
+    verify: (dir) => {
+      try {
+        execFileSync('node', ['test.js'], { cwd: dir, stdio: 'pipe' })
+        return read(dir, 'util.js').includes('sumAll')
+      } catch {
+        return false
+      }
+    },
+    check: 'node test.js'
+  },
+  {
     name: 'follow-up',
     turns: ['Lee util.js y dime en una frase qué hace.', '¿Y qué devuelve si le paso una lista vacía?'],
     verify: (_dir, answer) => /\b0\b|cero|zero/i.test(answer)
@@ -161,6 +177,10 @@ async function run(model: string, scenario: Scenario): Promise<TurnReport[]> {
     autoApprove: true
   })
   const reports: TurnReport[] = []
+  if (scenario.check) {
+    const config = loadConfig()
+    saveConfig({ ...config, verify: { ...config.verify, [dir]: scenario.check } })
+  }
   for (const [index, text] of scenario.turns.entries()) {
     const began = Date.now()
     const steer = index === 0 ? scenario.steer : undefined

@@ -350,6 +350,8 @@ export interface AppConfig {
    * every step rather than once in the system prompt, where long turns forgot them.
    */
   pinned?: string;
+  /** The check run after a step that edited files, per folder: `{ "/work/shop": "pnpm typecheck" }`. */
+  verify?: Record<string, string>;
   /**
    * What shunt delegates reading to, as `provider/model`. Unset, the cheapest
    * model that clears the capability floor is chosen for each job.

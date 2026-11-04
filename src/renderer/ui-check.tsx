@@ -31,6 +31,7 @@ import { ContextMeter } from "./src/components/ContextMeter";
 import { RowInput } from "./src/components/settings-ui";
 import { AutoModeRules } from "./src/components/AutoModeRules";
 import { PinnedInstructions } from "./src/components/PinnedInstructions";
+import { VerifyChecks } from "./src/components/VerifyChecks";
 import { SUGGESTED_AUTO_MODE } from "@shared/auto-mode";
 import { money, spendLabel } from "./src/lib/settings";
 import { duration, tokens } from "./src/lib/format";
@@ -678,6 +679,50 @@ async function run(): Promise<void> {
       "a message typed mid-turn is said to reach the agent at its next step",
       /next step/.test(waiting.textContent ?? "") && !/when this turn stops/.test(waiting.textContent ?? ""),
       (waiting.textContent ?? "").slice(-200),
+    );
+  }
+
+  section("checks after editing");
+  {
+    const checked = mount(
+      <ToolGroup
+        blocks={[
+          block({ id: "v1", tool: "edit", title: "edit", input: { path: "src/a.ts" } }),
+          block({ id: "v2", tool: "verify", title: "pnpm typecheck", input: { command: "pnpm typecheck" } }),
+        ]}
+      />,
+    );
+    await settle();
+    check(
+      "a check after an edit is named as one in the summary",
+      (checked.textContent ?? "").includes("Updated a.ts, ran a check"),
+      checked.textContent,
+    );
+
+    const saves: Record<string, string>[] = [];
+    const rows = mount(<VerifyChecks value={{ "/work/shop": "pnpm typecheck" }} onSave={(next) => saves.push(next)} />);
+    await settle();
+    check(
+      "the settings list each folder with its check",
+      (rows.textContent ?? "").includes("/work/shop") &&
+        [...rows.querySelectorAll("input")].some((i) => (i as HTMLInputElement).value === "pnpm typecheck"),
+      rows.textContent,
+    );
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    const [folder, command] = [...rows.querySelectorAll<HTMLInputElement>("input[data-new]")];
+    if (folder && command) {
+      setter.call(folder, "/work/blog");
+      folder.dispatchEvent(new Event("input", { bubbles: true }));
+      setter.call(command, "make check");
+      command.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle();
+      [...rows.querySelectorAll("button")].find((b) => /Add/.test(b.textContent ?? ""))?.click();
+      await settle();
+    }
+    check(
+      "and a new folder and check can be added",
+      JSON.stringify(saves.at(-1)) === JSON.stringify({ "/work/shop": "pnpm typecheck", "/work/blog": "make check" }),
+      saves.at(-1),
     );
   }
 

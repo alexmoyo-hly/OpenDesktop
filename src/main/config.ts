@@ -322,6 +322,16 @@ function lines(value: unknown): string[] {
     .filter(Boolean);
 }
 
+// Folder → command, keeping only commands that are text with something in them.
+function verifyOf(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: Record<string, string> = {};
+  for (const [folder, command] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof command === "string" && command.trim()) out[folder] = command.trim();
+  }
+  return out;
+}
+
 // Hand-editable: only lines of text count as rules, whatever else is in there.
 function autoModeOf(raw: unknown): AutoModePolicy | undefined {
   if (!raw || typeof raw !== "object") return undefined;
@@ -349,6 +359,7 @@ export function normalizeConfig(raw: Record<string, unknown>): AppConfig {
     // "yes" or 1 must not be what turns the prompts off.
     autoApprove: raw.autoApprove === true,
     autoMode: autoModeOf(raw.autoMode),
+    verify: verifyOf(raw.verify),
     pinned:
       typeof raw.pinned === "string" && raw.pinned.trim()
         ? raw.pinned.trim()

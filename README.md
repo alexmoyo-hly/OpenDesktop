@@ -691,6 +691,13 @@ A **bare Deny ends the turn**: told "do not retry", models still reached the sam
 way, so the next move is yours. Type a reason in the card instead and the turn carries on with
 it — the model gets "Their reason: …" as the result of the call.
 
+**Check after editing** — `"verify": { "/path/to/repo": "pnpm typecheck" }` in the config, or
+Settings → Agents → Every agent. After a step in which the agent wrote or edited a file — with
+the edit tools or a shell command that writes, since models edit with `sed -i` as often — the
+check for the deepest configured folder holding the session runs there, shows as a block, and
+if it fails its output is the next thing the model reads, so it fixes its own breakage before
+calling the work done. As in Aider, OpenCode and Claude Code.
+
 **Pinned instructions** — `"pinned"` in the config, or Settings → Agents → Every agent: standing
 instructions put at the end of what the model reads on every step of every turn, never saved
 into the conversation. Rules that lived only in the system prompt were forgotten in long turns;
