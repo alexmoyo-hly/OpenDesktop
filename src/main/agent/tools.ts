@@ -440,6 +440,19 @@ export async function externalTools(
   )
 }
 
+const writing = new Map<string, Promise<unknown>>()
+
+/** Runs one change to a file after the last one finished, so two edits in a step both land. */
+function oneAtATime<T>(path: string, change: () => Promise<T>): Promise<T> {
+  const previous = writing.get(path) ?? Promise.resolve()
+  const next = previous.catch(() => undefined).then(change)
+  writing.set(path, next)
+  void next.finally(() => {
+    if (writing.get(path) === next) writing.delete(path)
+  }).catch(() => undefined)
+  return next
+}
+
 export function createTools(ctx: ToolContext): ToolSet {
   const tools: ToolSet = {}
 
@@ -823,13 +836,26 @@ export function createTools(ctx: ToolContext): ToolSet {
             removed: stats.removed,
             permission: { key: 'edit', detail: `Edit ${resolved}`, preview }
           },
-          async (block) => {
-            const warning = writeWarning(ctx.sessionId, resolved)
-            await ctx.runtime.writeFile(resolved, after)
-            recordWrite(ctx.sessionId, resolved)
-            store.appendBlockOutput(ctx.sessionId, block.id, preview)
-            return { output: `Edited ${resolved} (+${stats.added} −${stats.removed}).` + warning }
-          }
+          async (block) =>
+            oneAtATime(resolved, async () => {
+              // Applied to the file as it is now: another edit may have landed since it was read above.
+              const current = await ctx.runtime.readFile(resolved)
+              const found = current.split(old_string).length - 1
+              if (found === 0 || (found > 1 && !replace_all)) {
+                throw new Error(
+                  `${resolved} changed while this edit waited and old_string now appears ${found} times. ` +
+                    'Read the file again and match the exact text.'
+                )
+              }
+              const applied = replace_all
+                ? current.split(old_string).join(new_string)
+                : current.replace(old_string, new_string)
+              const warning = writeWarning(ctx.sessionId, resolved)
+              await ctx.runtime.writeFile(resolved, applied)
+              recordWrite(ctx.sessionId, resolved)
+              store.appendBlockOutput(ctx.sessionId, block.id, preview)
+              return { output: `Edited ${resolved} (+${stats.added} −${stats.removed}).` + warning }
+            })
         )
       }
     })
