@@ -54,13 +54,14 @@ function Picker({
   options: { value: string; label: string }[];
   title: string;
 }): ReactNode {
+  // Shrinks before anything else on the line: a model name cut to "DeepSeek V4…" still says which.
   return (
-    <div className="relative inline-flex items-center">
+    <div className="relative inline-flex min-w-0 items-center">
       <select
         title={title}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="text-ink-400 hover:text-ink-200 cursor-pointer appearance-none bg-transparent pr-4 text-[11.5px] outline-none"
+        className="text-ink-400 hover:text-ink-200 min-w-0 max-w-full cursor-pointer appearance-none truncate bg-transparent pr-4 text-[11.5px] outline-none"
       >
         {options.map((option) => (
           <option
@@ -1016,10 +1017,10 @@ export function Composer({ session }: { session: Session }): ReactNode {
           {/* The right-hand end: what is answering, how hard it is trying, and
               how full its window is. In that order because that is the order
               you ask about them in, and because the two that open a panel are
-              nearest the corner the panel comes out of. Never wraps, never
-              shrinks: with both savings switches and auto-approve on, this is
-              what used to drop onto a second line. */}
-          <div data-footer-right className="flex shrink-0 items-center gap-1.5">
+              nearest the corner the panel comes out of. Never wraps: with both
+              savings switches and auto-approve on, this is what used to drop
+              onto a second line. Only the model name shrinks, for a docked pane. */}
+          <div data-footer-right className="flex min-w-0 items-center gap-1.5">
             {!model && models.length > 0 ? (
               <span className="text-warn text-[11px]">unknown model</span>
             ) : null}

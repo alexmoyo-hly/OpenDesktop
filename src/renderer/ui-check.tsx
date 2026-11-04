@@ -1951,6 +1951,25 @@ async function run(): Promise<void> {
       );
     }
 
+    // With the editor or the files docked, the chat got 240px in a real window; the ring was cut off there.
+    const docked = mount(<Composer session={loaded} />, 240);
+    await settle();
+    const dockedRow = docked.querySelector("[data-footer]") as HTMLElement | null;
+    const percent = [...docked.querySelectorAll("[data-footer-right] span")].find((span) =>
+      /%$/.test(span.textContent ?? ""),
+    ) as HTMLElement | undefined;
+    check(
+      "with a pane docked beside it, the ring still fits on the line",
+      Boolean(dockedRow && percent) &&
+        percent!.getBoundingClientRect().right <= dockedRow!.getBoundingClientRect().right + 1 &&
+        dockedRow!.getBoundingClientRect().height < 30,
+      {
+        ring: Math.round(percent?.getBoundingClientRect().right ?? 0),
+        row: Math.round(dockedRow?.getBoundingClientRect().right ?? 0),
+        height: Math.round(dockedRow?.getBoundingClientRect().height ?? 0),
+      },
+    );
+
     // The path is what gives way, because it is the one thing here that is
     // long, repetitive and already in the title bar.
     const narrow = mount(
