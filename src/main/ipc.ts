@@ -54,13 +54,12 @@ import * as history from "./history";
 import {
   compactNow,
   isRunning,
-  queueFollowUp,
-  runTurn,
   stop,
   allowAndRetry,
 } from "./agent/runner";
 import { acceptSuggestion, dismissSuggestion, recordApproval, suggestions } from "./learn";
 import { askAside } from "./aside";
+import { sendMessage } from "./send";
 import { rehearsePolicy } from "./auto-policy";
 import { exportSession } from "./export";
 import { forkFrom, rewind } from "./rewind";
@@ -862,47 +861,8 @@ export function registerIpc(): void {
   /* ---------- turns ---------- */
   ipcMain.handle(
     "turn:send",
-    async (_e, sessionId: string, text: string, attachments?: Attachment[]) => {
-      // On a board, the column the card sits in decides whether this runs now
-      // or joins the queue. That is what the column is for: a task in To do
-      // means "do this when there is room", and honouring it here is what lets
-      // a person line up ten tasks through the ordinary composer.
-      const session = store.getSession(sessionId);
-      const board = session?.boardId ? getBoard(session.boardId) : undefined;
-      const column = board && findColumn(board, session!.columnId);
-
-      if (
-        session &&
-        column &&
-        (column.kind === "todo" || column.kind === "backlog")
-      ) {
-        store.updateSession(session.id, {
-          queuedPrompt: text,
-          status: column.kind === "todo" ? "queued" : "idle",
-          title:
-            session.title === "New task" || session.title === "New session"
-              ? text.replace(/\s+/g, " ").slice(0, 70) || session.title
-              : session.title,
-        });
-        void tick();
-        return true;
-      }
-
-      /*
-       * Typing while it works is not an error. The message waits and goes as
-       * the next turn the moment this one stops — the alternative was a silent
-       * refusal, and the thought being gone by the time the turn ended.
-       */
-      if (isRunning(sessionId)) {
-        queueFollowUp(sessionId, text);
-        return true;
-      }
-
-      void runTurn({ sessionId, userText: text, attachments }).catch(
-        () => undefined,
-      );
-      return true;
-    },
+    (_e, sessionId: string, text: string, attachments?: Attachment[]) =>
+      sendMessage(sessionId, text, attachments),
   );
   ipcMain.handle("turn:stop", (_e, sessionId: string) => stop(sessionId));
 
