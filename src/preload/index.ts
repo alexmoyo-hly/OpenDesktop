@@ -342,6 +342,13 @@ const api = {
     stop: (sessionId: string): Promise<void> =>
       ipcRenderer.invoke("turn:stop", sessionId),
   },
+  /** Commands approved by hand often enough to offer for the allowlist. */
+  learn: {
+    suggestions: (): Promise<{ pattern: string; count: number; example: string }[]> =>
+      ipcRenderer.invoke("learn:suggestions"),
+    accept: (pattern: string): Promise<void> => ipcRenderer.invoke("learn:accept", pattern),
+    dismiss: (pattern: string): Promise<void> => ipcRenderer.invoke("learn:dismiss", pattern),
+  },
   approvals: {
     list: (): Promise<ApprovalRequest[]> => ipcRenderer.invoke("approval:list"),
     resolve: (

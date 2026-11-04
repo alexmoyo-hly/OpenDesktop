@@ -35,6 +35,7 @@ import { VerifyChecks } from "./src/components/VerifyChecks";
 import { TodoList } from "./src/components/TodoList";
 import { PlanReady } from "./src/components/PlanReady";
 import { SessionMenu } from "./src/components/SessionMenu";
+import { ApprovalSuggestion } from "./src/components/ApprovalSuggestion";
 import { SUGGESTED_AUTO_MODE } from "@shared/auto-mode";
 import { money, spendLabel } from "./src/lib/settings";
 import { duration, tokens } from "./src/lib/format";
@@ -816,6 +817,26 @@ async function run(): Promise<void> {
     );
     menu.querySelector("button")?.click();
     await settle();
+  }
+
+  section("learning from approvals");
+  {
+    REPLIES["learn.suggestions"] = [{ pattern: "pnpm test*", count: 4, example: "pnpm test --run" }];
+    const offer = mount(<ApprovalSuggestion session={session} />, 700);
+    await settle();
+    const text = offer.textContent ?? "";
+    check(
+      "a command approved again and again is offered for the allowlist, with how often",
+      text.includes("pnpm test*") && text.includes("4") &&
+        [...offer.querySelectorAll("button")].some((b) => /allowlist/i.test(b.textContent ?? "")) &&
+        [...offer.querySelectorAll("button")].some((b) => /Not this one/.test(b.textContent ?? "")),
+      text,
+    );
+    REPLIES["learn.suggestions"] = [];
+    const quiet = mount(<ApprovalSuggestion session={session} />, 700);
+    await settle();
+    check("and nothing is shown when there is nothing to offer", (quiet.textContent ?? "") === "", quiet.textContent);
+    delete REPLIES["learn.suggestions"];
   }
 
   section("a run of tool calls, collapsed");

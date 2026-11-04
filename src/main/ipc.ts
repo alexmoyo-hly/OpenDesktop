@@ -58,6 +58,7 @@ import {
   stop,
   allowAndRetry,
 } from "./agent/runner";
+import { acceptSuggestion, dismissSuggestion, recordApproval, suggestions } from "./learn";
 import { exportSession } from "./export";
 import { forkFrom, rewind } from "./rewind";
 import {
@@ -910,13 +911,23 @@ export function registerIpc(): void {
   );
   ipcMain.handle(
     "approval:resolve",
-    (_e, id: string, answer: ApprovalAnswer, note?: unknown) =>
+    (_e, id: string, answer: ApprovalAnswer, note?: unknown) => {
+      // Only a person's own yes counts towards an allowlist suggestion.
+      const request = listPending().find((pending) => pending.id === id);
+      if (request && answer !== "reject") recordApproval(request);
       resolveApproval(
         id,
         answer,
         typeof note === "string" ? note.slice(0, 2000) : undefined,
-      ),
+      );
+    },
   );
+  ipcMain.handle("learn:suggestions", () => suggestions(resolvedConfig()));
+  ipcMain.handle("learn:accept", (_e, pattern: string) => {
+    acceptSuggestion(pattern);
+    bus.emit({ type: "config.updated", config: rawConfig() });
+  });
+  ipcMain.handle("learn:dismiss", (_e, pattern: string) => dismissSuggestion(pattern));
 
   /* ---------- activity ---------- */
   ipcMain.handle("blocks:all", (_e, limit?: number) =>

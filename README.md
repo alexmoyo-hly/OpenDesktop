@@ -674,6 +674,13 @@ where; only a session that runs without asking skips it. The auto-approve switch
 a call would ask, not when the turn started: turning it on lets the card already waiting
 through and the rest of the turn runs without asking, and a subagent follows its conversation.
 
+**Learning from approvals** — each shell command a person approves by hand counts towards
+the pattern they would write for it (`pnpm test --run` → `pnpm test*`). On the third, a bar
+above the composer offers to put that pattern on the allowlist, or to stop offering it. Never
+for commands that remove, move, push or reach out (`rm`, `mv`, `git push`, `sudo`, `curl`,
+`terraform`…), nor for what the allowlist already covers or the denylist refuses; only a
+person's own approvals count, never auto-approve's.
+
 **Auto-approve rules** — `autoMode` in the config, or Settings → Config file → Approvals: rules
 in prose, one per line, the way Claude Code's auto mode is configured (`environment`, `allow`,
 `deny`, and an optional judge `model`). With any `allow` or `deny` line, each call an
