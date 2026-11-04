@@ -688,6 +688,11 @@ A **bare Deny ends the turn**: told "do not retry", models still reached the sam
 way, so the next move is yours. Type a reason in the card instead and the turn carries on with
 it — the model gets "Their reason: …" as the result of the call.
 
+**Pinned instructions** — `"pinned"` in the config, or Settings → Agents → Every agent: standing
+instructions put at the end of what the model reads on every step of every turn, never saved
+into the conversation. Rules that lived only in the system prompt were forgotten in long turns;
+these are the last thing read each time, as Goose does. Keep them short: each step pays for them.
+
 **Language** — `"language": "Spanish"` in the config names the language of every reply to the
 model. The default rule, "the language the user wrote in", is not always obeyed: DeepSeek
 narrated in English to Spanish prompts until the language was named.

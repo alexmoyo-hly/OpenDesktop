@@ -349,6 +349,10 @@ export function normalizeConfig(raw: Record<string, unknown>): AppConfig {
     // "yes" or 1 must not be what turns the prompts off.
     autoApprove: raw.autoApprove === true,
     autoMode: autoModeOf(raw.autoMode),
+    pinned:
+      typeof raw.pinned === "string" && raw.pinned.trim()
+        ? raw.pinned.trim()
+        : undefined,
     // Only the two switches this app has, and only as booleans: a config is
     // hand-editable, and `"rtk": "yes"` should not switch anything on.
     savings: {

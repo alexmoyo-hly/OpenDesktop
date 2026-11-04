@@ -346,6 +346,11 @@ export interface AppConfig {
    */
   autoMode?: AutoModePolicy;
   /**
+   * The person's standing instructions, put at the end of what the model reads on
+   * every step rather than once in the system prompt, where long turns forgot them.
+   */
+  pinned?: string;
+  /**
    * What shunt delegates reading to, as `provider/model`. Unset, the cheapest
    * model that clears the capability floor is chosen for each job.
    */

@@ -1707,8 +1707,15 @@ export async function runTurn(input: TurnInput): Promise<string> {
         const base = dropReasoning
           ? pruneMessages({ messages: soFar, reasoning: "all" })
           : soFar;
+        // Last thing read on every step, so a long turn cannot drift from it; never saved.
+        const pinned = config.pinned
+          ? [{ role: "user" as const, content: `<pinned>${config.pinned}</pinned>` }]
+          : [];
         // The first step is the one the conversation already opened with.
-        if (stepNumber === 0) return dropReasoning ? { messages: base } : {};
+        if (stepNumber === 0) {
+          if (pinned.length > 0) return { messages: [...base, ...pinned] };
+          return dropReasoning ? { messages: base } : {};
+        }
         const notes: string[] = [];
         const { count: repeats, call: repeated } = repeatedCalls(done);
         if (repeats >= LOOP_WARN_AT) {
@@ -1746,11 +1753,14 @@ export async function runTurn(input: TurnInput): Promise<string> {
               `blocks arrive with no account of what they add up to.</progress>`,
           );
         }
-        if (notes.length === 0) return dropReasoning ? { messages: base } : {};
+        if (notes.length === 0 && pinned.length === 0) {
+          return dropReasoning ? { messages: base } : {};
+        }
         return {
           messages: [
             ...base,
             ...notes.map((content) => ({ role: "user" as const, content })),
+            ...pinned,
           ],
         };
       },

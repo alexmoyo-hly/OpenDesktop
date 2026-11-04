@@ -30,6 +30,7 @@ import { EditedFiles, ToolGroup } from "./src/components/Transcript";
 import { ContextMeter } from "./src/components/ContextMeter";
 import { RowInput } from "./src/components/settings-ui";
 import { AutoModeRules } from "./src/components/AutoModeRules";
+import { PinnedInstructions } from "./src/components/PinnedInstructions";
 import { SUGGESTED_AUTO_MODE } from "@shared/auto-mode";
 import { money, spendLabel } from "./src/lib/settings";
 import { duration, tokens } from "./src/lib/format";
@@ -646,6 +647,23 @@ async function run(): Promise<void> {
       [...refused.querySelectorAll("button")].some((b) => /Allow and retry/.test(b.textContent ?? "")),
       [...refused.querySelectorAll("button")].map((b) => b.textContent),
     );
+  }
+
+  section("pinned instructions");
+  {
+    const saved: (string | undefined)[] = [];
+    const host = mount(<PinnedInstructions value="Answer in Spanish." onSave={(next) => saved.push(next)} />);
+    await settle();
+    const box = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Pinned instructions"]');
+    check("shows what is pinned", box?.value === "Answer in Spanish.", box?.value);
+    if (box) {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(box, "  Be brief.  ");
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle();
+      box.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+      await settle();
+    }
+    check("and saves what is typed when the box is left", saved.at(-1) === "Be brief.", saved);
   }
 
   section("a run of tool calls, collapsed");
