@@ -32,6 +32,7 @@ import { RowInput } from "./src/components/settings-ui";
 import { AutoModeRules } from "./src/components/AutoModeRules";
 import { PinnedInstructions } from "./src/components/PinnedInstructions";
 import { VerifyChecks } from "./src/components/VerifyChecks";
+import { TodoList } from "./src/components/TodoList";
 import { SUGGESTED_AUTO_MODE } from "@shared/auto-mode";
 import { money, spendLabel } from "./src/lib/settings";
 import { duration, tokens } from "./src/lib/format";
@@ -724,6 +725,34 @@ async function run(): Promise<void> {
       JSON.stringify(saves.at(-1)) === JSON.stringify({ "/work/shop": "pnpm typecheck", "/work/blog": "make check" }),
       saves.at(-1),
     );
+  }
+
+  section("the agent's checklist");
+  {
+    const todos = [
+      { text: "Read the config", status: "done" as const },
+      { text: "Change the port", status: "in_progress" as const },
+      { text: "Run the tests", status: "pending" as const },
+    ];
+    const working = mount(<TodoList session={{ ...session, status: "running", todos }} />, 700);
+    await settle();
+    const shown = working.textContent ?? "";
+    check(
+      "shows how far through it is, and every step",
+      shown.includes("1/3") && shown.includes("Change the port") && shown.includes("Run the tests"),
+      shown,
+    );
+    check(
+      "with the step in progress marked as such",
+      working.querySelector('[data-status="in_progress"]')?.textContent?.includes("Change the port") === true,
+      working.innerHTML.slice(0, 300),
+    );
+    const finished = mount(
+      <TodoList session={{ ...session, status: "idle", todos: todos.map((t) => ({ ...t, status: "done" as const })) }} />,
+      700,
+    );
+    await settle();
+    check("and goes away once every step is done and the turn is over", (finished.textContent ?? "") === "", finished.textContent);
   }
 
   section("a run of tool calls, collapsed");

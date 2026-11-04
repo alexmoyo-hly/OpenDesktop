@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { TodoList } from './TodoList'
 import { Check, Copy, FileText, GitBranch, RotateCcw } from 'lucide-react'
 import type { Attachment, Block, Message, Session } from '@shared/types'
 import { isManager } from '@shared/types'
@@ -415,6 +416,7 @@ export function ChatView({ session }: { session: Session }): ReactNode {
           ))}
         </div>
       </div>
+      <TodoList session={session} />
       <Composer session={session} />
     </div>
   )

@@ -1412,6 +1412,36 @@ export function createTools(ctx: ToolContext): ToolSet {
    * credential only a person has, a decision that is not the agent's to make.
    * Without this the agent's only options are to guess or to give up quietly.
    */
+  /*
+   * The agent's checklist, as Claude Code, Cursor and OpenCode keep one: the
+   * whole list each time, so there is nothing to reconcile, kept on the session
+   * and drawn above the composer rather than as a block in the transcript.
+   */
+  tools.todo = tool({
+    description:
+      'Keep a checklist of the steps of the work in hand, shown to the person as you go. Use it ' +
+      'for work of three or more steps; skip it for a one-step answer. Send the whole list every ' +
+      'time. Keep exactly one step in_progress while you work, and mark a step done as soon as it is. ' +
+      'Send each update in the same step as your next other call, not as a step of its own: every ' +
+      'step resends the conversation.',
+    inputSchema: z.object({
+      items: z
+        .array(
+          z.object({
+            text: z.string().describe('The step, as a short imperative.'),
+            status: z.enum(['pending', 'in_progress', 'done'])
+          })
+        )
+        .describe('The whole list, in order.')
+    }),
+    execute: async ({ items }) => {
+      store.updateSession(ctx.sessionId, { todos: items })
+      const done = items.filter((item) => item.status === 'done').length
+      const now = items.find((item) => item.status === 'in_progress')
+      return { output: `Checklist saved: ${done} of ${items.length} done${now ? `; now: ${now.text}` : ''}.` }
+    }
+  })
+
   tools.need_human = tool({
     description:
       'Stop and hand this task back to a person. Use when you cannot continue without ' +

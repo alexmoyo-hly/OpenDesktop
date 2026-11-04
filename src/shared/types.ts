@@ -308,6 +308,12 @@ export function isManager(agentId: string | undefined): boolean {
   return agentId === MANAGER_AGENT || agentId === AUTO_AGENT || !agentId;
 }
 
+/** One step of the agent's checklist. */
+export interface TodoItem {
+  text: string;
+  status: "pending" | "in_progress" | "done";
+}
+
 /** Auto-approve rules in prose, one per line, as Claude Code's auto mode writes them. */
 export interface AutoModePolicy {
   /** Context the judge needs: what this machine is, what is trusted. */
@@ -618,6 +624,8 @@ export interface Session {
    * the moment this one stops.
    */
   queuedFollowUps?: string[];
+  /** The agent's own checklist for the work in hand, as it last wrote it. */
+  todos?: TodoItem[];
   /** Parent session when this was spawned by a `task` tool call. */
   parentSessionId?: string;
   /** Short label for a subagent session, shown on its subchat. */

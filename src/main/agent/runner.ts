@@ -70,6 +70,9 @@ import { modelAcceptsImages, readAttachment } from "../attachments";
 
 const controllers = new Map<string, AbortController>();
 
+/** Tool calls in a turn after which an agent without a checklist is asked to keep one. */
+const PLAN_AFTER_CALLS = 6;
+
 export function isRunning(sessionId: string): boolean {
   return controllers.has(sessionId);
 }
@@ -1686,6 +1689,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
     };
 
     const verifyCommand = verifyCommandFor(config, session.cwd);
+    let planReminded = false;
     // Messages typed mid-turn: where each joined the model's view, and which the transcript has yet to show.
     const steered: Steered[] = [];
     const toShow: string[] = [];
@@ -1827,6 +1831,16 @@ export async function runTurn(input: TurnInput): Promise<string> {
               `Before the next one, write one short line — what you are doing, or what you have ` +
               `found — then carry on. A sentence, not a report: the reader has been watching ` +
               `blocks arrive with no account of what they add up to.</progress>`,
+          );
+        }
+        // Rules in a tool description were not enough for DeepSeek: past a few calls, ask once.
+        const calls = done.reduce((n, step) => n + step.toolCalls.length, 0);
+        const keepsList = done.some((step) => step.toolCalls.some((call) => call.toolName === "todo"));
+        if (!planReminded && calls >= PLAN_AFTER_CALLS && !keepsList) {
+          planReminded = true;
+          notes.push(
+            `<plan>This is turning into several steps. Call the todo tool now with the steps you see, ` +
+              `keep one in_progress, and update it as you finish each.</plan>`,
           );
         }
         if (notes.length === 0 && pinned.length === 0) {

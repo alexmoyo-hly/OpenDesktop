@@ -106,6 +106,8 @@ interface Scenario {
   steer?: { afterMs: number; text: string }
   /** The check run after edits in this scenario's folder (`verify` in the config). */
   check?: string
+  /** The agent should have kept a checklist for it. */
+  todos?: boolean
 }
 
 const SCENARIOS: Scenario[] = [
@@ -149,6 +151,15 @@ const SCENARIOS: Scenario[] = [
       }
     },
     check: 'node test.js'
+  },
+  {
+    name: 'plan',
+    turns: [
+      'Tres cosas, en orden: añade a util.js una función average que devuelva la media, ' +
+        'añade a test.js un test para average, y ejecuta los tests.'
+    ],
+    todos: true,
+    verify: (dir) => read(dir, 'util.js').includes('average') && read(dir, 'test.js').includes('average')
   },
   {
     name: 'follow-up',
@@ -197,7 +208,10 @@ async function run(model: string, scenario: Scenario): Promise<TurnReport[]> {
       ...said,
       scenario: `${scenario.name}#${index + 1}`,
       model,
-      ok: last ? scenario.verify(dir, said.answer) : said.textParts > 0,
+      ok: last
+        ? scenario.verify(dir, said.answer) &&
+          (!scenario.todos || (store.getSession(session.id)?.todos?.length ?? 0) > 0)
+        : said.textParts > 0,
       status: store.getSession(session.id)?.status ?? 'gone',
       ms: log.ms || Date.now() - began
     })

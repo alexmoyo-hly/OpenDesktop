@@ -691,6 +691,12 @@ A **bare Deny ends the turn**: told "do not retry", models still reached the sam
 way, so the next move is yours. Type a reason in the card instead and the turn carries on with
 it — the model gets "Their reason: …" as the result of the call.
 
+**Plan** — the agent keeps a checklist with the `todo` tool (the whole list each time, one step
+in progress), drawn above the composer with how far through it is, until it is all done and the
+turn is over. Past six tool calls in a turn without one, it is asked once to keep one: a rule in
+the tool's description was not enough for DeepSeek. It costs steps — measured on a three-part
+task, 6–8 steps and 31–42k input tokens (over 80% cached) against 4 and 19k without it.
+
 **Check after editing** — `"verify": { "/path/to/repo": "pnpm typecheck" }` in the config, or
 Settings → Agents → Every agent. After a step in which the agent wrote or edited a file — with
 the edit tools or a shell command that writes, since models edit with `sed -i` as often — the
