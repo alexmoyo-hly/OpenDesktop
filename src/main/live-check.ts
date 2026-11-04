@@ -108,6 +108,8 @@ interface Scenario {
   check?: string
   /** The agent should have kept a checklist for it. */
   todos?: boolean
+  /** Run in plan mode: read-only until a plan is approved. */
+  planMode?: boolean
 }
 
 const SCENARIOS: Scenario[] = [
@@ -162,6 +164,12 @@ const SCENARIOS: Scenario[] = [
     verify: (dir) => read(dir, 'util.js').includes('average') && read(dir, 'test.js').includes('average')
   },
   {
+    name: 'plan-mode',
+    planMode: true,
+    turns: ['Añade a util.js una función average que devuelva la media de una lista.'],
+    verify: (dir, answer) => !read(dir, 'util.js').includes('average') && /\n\s*1[.)]/.test(answer)
+  },
+  {
     name: 'follow-up',
     turns: ['Lee util.js y dime en una frase qué hace.', '¿Y qué devuelve si le paso una lista vacía?'],
     verify: (_dir, answer) => /\b0\b|cero|zero/i.test(answer)
@@ -185,7 +193,8 @@ async function run(model: string, scenario: Scenario): Promise<TurnReport[]> {
     environmentId: 'local',
     agentId: 'manager',
     model: `${providerFor(model)}/${model}`,
-    autoApprove: true
+    autoApprove: true,
+    planMode: scenario.planMode
   })
   const reports: TurnReport[] = []
   if (scenario.check) {

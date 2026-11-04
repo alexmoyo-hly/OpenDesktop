@@ -691,6 +691,13 @@ A **bare Deny ends the turn**: told "do not retry", models still reached the sam
 way, so the next move is yours. Type a reason in the card instead and the turn carries on with
 it — the model gets "Their reason: …" as the result of the call.
 
+**Plan mode** — the list icon beside auto-approve. The agent reads, searches, fetches and runs
+the commands the allowlist calls read-only; anything that writes, edits or changes state is
+refused with "put this step in the plan", even with auto-approve on, and its system prompt asks
+it to end with numbered steps, the files involved and how it will check the result. "Run this
+plan" above the composer switches plan mode off and tells it to go ahead. Read as each call
+asks, so switching it reaches a running turn; a subagent follows its conversation.
+
 **Plan** — the agent keeps a checklist with the `todo` tool (the whole list each time, one step
 in progress), drawn above the composer with how far through it is, until it is all done and the
 turn is over. Past six tool calls in a turn without one, it is asked once to keep one: a rule in

@@ -623,6 +623,8 @@ export interface Session {
    * ends. They queue here instead, survive a restart, and go as the next turn
    * the moment this one stops.
    */
+  /** Read-only until the person approves a plan: nothing that changes anything runs. */
+  planMode?: boolean;
   queuedFollowUps?: string[];
   /** The agent's own checklist for the work in hand, as it last wrote it. */
   todos?: TodoItem[];

@@ -144,6 +144,7 @@ export function createSession(input: {
   /** Ids of the tool servers this session carries. */
   mcp?: string[];
   parentSessionId?: string;
+  planMode?: boolean;
 }): Session {
   const now = Date.now();
   const session: Session = {
@@ -162,6 +163,7 @@ export function createSession(input: {
     updatedAt: now,
     usage: { input: 0, output: 0, cost: 0 },
     parentSessionId: input.parentSessionId,
+    planMode: input.planMode,
   };
   sessions.set(session.id, { session, messages: [], blocks: [] });
   markDirty(session.id);

@@ -1419,6 +1419,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
     // is built around, so the container kind overrides the switch.
     const autoApprove =
       runtime.kind === "container" ? false : autoApproving(config, session.id);
+    const planMode = store.rootOf(session).planMode === true;
     // A judge that kept refusing last turn is trusted again: the person has spoken since.
     resetPolicyBreaker(session.id);
     const savings = await announceSavingsProblems({
@@ -1633,6 +1634,12 @@ export async function runTurn(input: TurnInput): Promise<string> {
       (typeof config.language === "string" && config.language.trim()
         ? `\n\n# Language\nWrite every message to the user in ${config.language.trim()}, ` +
           `whatever language the files, the tools or these instructions are in.`
+        : "") +
+      (planMode
+        ? `\n\n# Plan mode\nThe person wants a plan before any change. Read, search and run ` +
+          `read-only commands as you need; anything that writes, edits or changes state is refused. ` +
+          `End your answer with the plan: numbered steps, the files involved, and how you will check ` +
+          `the result. The person runs it when they approve it.`
         : "") +
       (brief ? briefSection(brief) : "") +
       (slim

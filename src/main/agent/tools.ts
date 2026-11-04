@@ -155,7 +155,24 @@ function actionOf(block: Block, spec: PermissionSpec): string {
   return `${block.tool}: ${spec.command ?? spec.detail}${outside}${preview}`
 }
 
+// Plan mode, read now so switching it reaches a running turn; a subagent follows its conversation.
+function planModeOn(ctx: ToolContext): boolean {
+  const session = store.getSession(ctx.sessionId)
+  return session ? store.rootOf(session).planMode === true : false
+}
+
+// What plan mode lets through: reading, fetching, and shell commands the allowlist calls read-only.
+function readOnly(ctx: ToolContext, spec: PermissionSpec): boolean {
+  if (spec.key === 'read' || spec.key === 'fetch') return true
+  return spec.key === 'bash' && decide(ctx.permissions, 'bash', spec.command).preapproved
+}
+
 async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpec): Promise<void> {
+  if (planModeOn(ctx) && !readOnly(ctx, spec)) {
+    const why = 'plan mode — nothing is changed until the person approves the plan; put this step in it'
+    store.updateBlock(ctx.sessionId, block.id, { status: 'error', error: `Not run: ${why}`, endedAt: Date.now() })
+    throw new PermissionDenied(spec.detail, why)
+  }
   const auto = autoNow(ctx)
   const decision = decide(auto ? withoutPrompts(ctx.permissions) : ctx.permissions, spec.key, spec.command)
   if (decision.mode === 'deny') {

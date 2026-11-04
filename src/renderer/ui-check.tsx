@@ -33,6 +33,7 @@ import { AutoModeRules } from "./src/components/AutoModeRules";
 import { PinnedInstructions } from "./src/components/PinnedInstructions";
 import { VerifyChecks } from "./src/components/VerifyChecks";
 import { TodoList } from "./src/components/TodoList";
+import { PlanReady } from "./src/components/PlanReady";
 import { SUGGESTED_AUTO_MODE } from "@shared/auto-mode";
 import { money, spendLabel } from "./src/lib/settings";
 import { duration, tokens } from "./src/lib/format";
@@ -753,6 +754,52 @@ async function run(): Promise<void> {
     );
     await settle();
     check("and goes away once every step is done and the turn is over", (finished.textContent ?? "") === "", finished.textContent);
+  }
+
+  section("plan mode");
+  {
+    const planning = mount(<Composer session={{ ...session, planMode: true }} />, 900);
+    await settle();
+    check(
+      "the footer says the session is planning",
+      planning.querySelector('[aria-label="Plan mode is on"]') !== null,
+      [...planning.querySelectorAll("button[aria-label]")].map((b) => b.getAttribute("aria-label")),
+    );
+    const doing = mount(<Composer session={session} />, 900);
+    await settle();
+    check(
+      "and offers it when it is off",
+      doing.querySelector('[aria-label="Plan first"]') !== null,
+      [...doing.querySelectorAll("button[aria-label]")].map((b) => b.getAttribute("aria-label")),
+    );
+
+    const answered: Message[] = [
+      { id: "p1", sessionId: session.id, role: "user", parts: [{ type: "text", text: "plan it" }], createdAt: 1 } as Message,
+      {
+        id: "p2",
+        sessionId: session.id,
+        role: "assistant",
+        parts: [{ type: "text", text: "1. Edit a.ts. 2. Run the tests." }],
+        createdAt: 2,
+        completedAt: 3,
+      } as Message,
+    ];
+    useStore.setState({ messages: { [session.id]: answered } });
+    const ready = mount(<PlanReady session={{ ...session, planMode: true, status: "idle" }} />, 700);
+    const busy = mount(<PlanReady session={{ ...session, planMode: true, status: "running" }} />, 700);
+    const off = mount(<PlanReady session={{ ...session, status: "idle" }} />, 700);
+    await settle();
+    check(
+      "a finished plan offers to run it",
+      [...ready.querySelectorAll("button")].some((b) => /Run this plan/.test(b.textContent ?? "")),
+      ready.textContent,
+    );
+    check(
+      "but not while it is still being written, nor outside plan mode",
+      (busy.textContent ?? "") === "" && (off.textContent ?? "") === "",
+      [busy.textContent, off.textContent],
+    );
+    useStore.setState({ messages: {} });
   }
 
   section("a run of tool calls, collapsed");

@@ -20,6 +20,7 @@ import {
   Download,
   Gauge,
   ImageIcon,
+  ListChecks,
   Paperclip,
   Square,
   X,
@@ -354,6 +355,34 @@ function ApprovalChip({ session }: { session: Session }): ReactNode {
       ) : (
         <ShieldCheck className="h-3.5 w-3.5" />
       )}
+    </button>
+  );
+}
+
+/**
+ * Plan mode, per session: read-only until the person approves a plan. Its own
+ * chip beside auto-approve, since the two answer different questions — whether
+ * to ask, and whether to change anything yet.
+ */
+function PlanChip({ session }: { session: Session }): ReactNode {
+  const on = session.planMode === true;
+  return (
+    <button
+      type="button"
+      aria-label={on ? "Plan mode is on" : "Plan first"}
+      title={
+        on
+          ? "Plan mode: the agent reads and plans, and changes nothing until you run the plan. Click to let it act."
+          : "Plan first: the agent explores read-only and writes a plan for you to approve."
+      }
+      onClick={() => void window.opendesktop.sessions.update(session.id, { planMode: !on })}
+      className={clsx(
+        "flex shrink-0 items-center gap-1 rounded-md px-1.5 py-[3px] text-[12px] transition-colors",
+        on ? "text-info hover:bg-info/10" : "text-ink-500 hover:text-ink-200",
+      )}
+    >
+      <ListChecks className="h-3.5 w-3.5" />
+      {on ? <span className="hidden @[620px]:inline">Plan</span> : null}
     </button>
   );
 }
@@ -1008,6 +1037,8 @@ export function Composer({ session }: { session: Session }): ReactNode {
             <SavingsChip session={session} />
 
             <ApprovalChip session={session} />
+
+            <PlanChip session={session} />
 
             {/* Only when servers are declared: a control for a thing you do not
               have is furniture. */}
