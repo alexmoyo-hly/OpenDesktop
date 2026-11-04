@@ -747,6 +747,21 @@ async function run(): Promise<void> {
       checked.textContent,
     );
 
+    // Found live: "Updated 3 files" for two files, and "Updated 2 files" for two edits the gate refused.
+    const edit = (id: string, path: string, status: Block["status"] = "success") =>
+      block({ id, tool: "edit", title: "edit", input: { path }, status });
+    const twoFiles = mount(<ToolGroup blocks={[edit("e1", "util.js"), edit("e2", "test.js"), edit("e3", "util.js")]} />);
+    const oneFile = mount(<ToolGroup blocks={[edit("e4", "util.js"), edit("e5", "util.js")]} />);
+    const refused = mount(<ToolGroup blocks={[edit("e6", "util.js", "error"), edit("e7", "test.js", "error")]} />);
+    await settle();
+    check("files are counted once however many edits they had", (twoFiles.textContent ?? "").includes("Updated 2 files"), twoFiles.textContent);
+    check("and one file edited twice is named", (oneFile.textContent ?? "").includes("Updated util.js"), oneFile.textContent);
+    check(
+      "edits that did not happen are not called updates",
+      !/Updated/.test(refused.textContent ?? "") && /Couldn't update 2 files/.test(refused.textContent ?? ""),
+      refused.textContent,
+    );
+
     const saves: Record<string, string>[] = [];
     const rows = mount(<VerifyChecks value={{ "/work/shop": "pnpm typecheck" }} onSave={(next) => saves.push(next)} />);
     await settle();

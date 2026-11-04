@@ -43,9 +43,17 @@ function summarize(blocks: Block[]): string {
   if (overwritten.length === 1) parts.push(`rewrote ${basename(filePath(overwritten[0]) ?? 'a file')}`)
   else if (overwritten.length > 1) parts.push(`rewrote ${overwritten.length} files`)
 
+  // Files, not calls: the same file edited three times is one file updated.
+  const files = (list: Block[]): string[] => [...new Set(list.map((b) => filePath(b) ?? b.id))]
   const edits = by('edit')
-  if (edits.length === 1) parts.push(`updated ${basename(filePath(edits[0]) ?? 'a file')}`)
-  else if (edits.length > 1) parts.push(`updated ${edits.length} files`)
+  const updated = files(edits.filter((b) => b.status !== 'error' && b.status !== 'canceled'))
+  const failed = files(edits.filter((b) => b.status === 'error' || b.status === 'canceled')).filter(
+    (path) => !updated.includes(path)
+  )
+  if (updated.length === 1) parts.push(`updated ${basename(updated[0])}`)
+  else if (updated.length > 1) parts.push(`updated ${updated.length} files`)
+  if (failed.length === 1) parts.push(`couldn't update ${basename(failed[0])}`)
+  else if (failed.length > 1) parts.push(`couldn't update ${failed.length} files`)
 
   const commands = by('bash')
   if (commands.length > 0) parts.push(`ran ${count(commands.length, 'command', 'commands')}`)
