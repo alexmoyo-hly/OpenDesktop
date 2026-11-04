@@ -193,6 +193,9 @@ const api = {
   },
   sessions: {
     list: (): Promise<Session[]> => ipcRenderer.invoke("session:list"),
+    /** Asks where, then writes the conversation there as Markdown. */
+    exportMarkdown: (id: string): Promise<{ saved: boolean; path?: string }> =>
+      ipcRenderer.invoke("session:export", id),
     /** Other conversations that have changed the same files as this one. */
     neighbours: (sessionId: string): Promise<Neighbour[]> =>
       ipcRenderer.invoke("coordination:neighbours", sessionId),

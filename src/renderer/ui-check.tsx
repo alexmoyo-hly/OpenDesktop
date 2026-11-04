@@ -34,6 +34,7 @@ import { PinnedInstructions } from "./src/components/PinnedInstructions";
 import { VerifyChecks } from "./src/components/VerifyChecks";
 import { TodoList } from "./src/components/TodoList";
 import { PlanReady } from "./src/components/PlanReady";
+import { SessionMenu } from "./src/components/SessionMenu";
 import { SUGGESTED_AUTO_MODE } from "@shared/auto-mode";
 import { money, spendLabel } from "./src/lib/settings";
 import { duration, tokens } from "./src/lib/format";
@@ -800,6 +801,21 @@ async function run(): Promise<void> {
       [busy.textContent, off.textContent],
     );
     useStore.setState({ messages: {} });
+  }
+
+  section("exporting a conversation");
+  {
+    const menu = mount(<SessionMenu session={session} />, 400);
+    await settle();
+    menu.querySelector("button")?.click();
+    await settle();
+    check(
+      "the session menu offers it as Markdown",
+      /Export as Markdown/.test(document.body.textContent ?? ""),
+      (menu.textContent ?? "").slice(0, 200),
+    );
+    menu.querySelector("button")?.click();
+    await settle();
   }
 
   section("a run of tool calls, collapsed");

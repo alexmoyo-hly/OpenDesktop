@@ -691,6 +691,10 @@ A **bare Deny ends the turn**: told "do not retry", models still reached the sam
 way, so the next move is yours. Type a reason in the card instead and the turn carries on with
 it — the model gets "Their reason: …" as the result of the call.
 
+**Export** — session menu → Export as Markdown: who said what in order, the commands with
+their output (cut at 40 lines), the edits as diffs and what failed, without the model's
+reasoning. For handing a conversation over, archiving it or reading it in review.
+
 **Plan mode** — the list icon beside auto-approve. The agent reads, searches, fetches and runs
 the commands the allowlist calls read-only; anything that writes, edits or changes state is
 refused with "put this step in the plan", even with auto-approve on, and its system prompt asks

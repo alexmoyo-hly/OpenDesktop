@@ -58,6 +58,7 @@ import {
   stop,
   allowAndRetry,
 } from "./agent/runner";
+import { exportSession } from "./export";
 import { forkFrom, rewind } from "./rewind";
 import {
   approveWaiting,
@@ -1126,6 +1127,16 @@ export function registerIpc(): void {
    * fetched over the same connection that made it rather than needing the user
    * to go and find it there.
    */
+  ipcMain.handle("session:export", async (_e, id: string) => {
+    const session = store.getSession(id);
+    if (!session) return { saved: false };
+    const name = `${(session.title || "conversation").replace(/[^\w\- ]+/g, "").trim().slice(0, 60) || "conversation"}.md`;
+    const result = await dialog.showSaveDialog({ defaultPath: name, title: "Export conversation" });
+    if (result.canceled || !result.filePath) return { saved: false };
+    exportSession(id, result.filePath);
+    bus.emit({ type: "toast", level: "info", message: `Saved the conversation to ${result.filePath}` });
+    return { saved: true, path: result.filePath };
+  });
   ipcMain.handle(
     "fs:download",
     async (_e, environmentId: string, path: string, sessionId?: string) => {
