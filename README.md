@@ -636,9 +636,12 @@ conversation's, so it is listed there and labelled with the agent that started i
 attribution is resolved when the task starts, so it survives the subagent's session being
 deleted. Tasks are bound to the process: a restart does not carry them over.
 
-**Typing while it works** — a message sent during a turn is queued rather than
-refused, and goes as its own turn the moment the running one stops; the composer
-says so, and the note lives on the session, so closing the app does not lose it.
+**Typing while it works** — a message sent during a turn reaches it at its next step,
+after the results of the step in progress, without stopping it: the way to say "use bar
+instead" to a run that is otherwise going well. It shows in the transcript where it joined,
+and is saved into the conversation there, so later turns still know it was said. One sent
+while the turn is giving its final answer goes as a turn of its own once it ends. Until it
+is taken it lives on the session, so closing the app does not lose it.
 Attachments wait for a turn of their own, since a file only means something
 alongside the message it arrived with. The button stays Stop while a turn runs —
 stopping has to remain one click.

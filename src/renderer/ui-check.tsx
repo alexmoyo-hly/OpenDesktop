@@ -666,6 +666,21 @@ async function run(): Promise<void> {
     check("and saves what is typed when the box is left", saved.at(-1) === "Be brief.", saved);
   }
 
+  section("typing while a turn works");
+  {
+    // It reaches the running turn at its next step now; the line under the box says so.
+    const waiting = mount(
+      <Composer session={{ ...session, status: "running", queuedFollowUps: ["use bar instead"] }} />,
+      900,
+    );
+    await settle();
+    check(
+      "a message typed mid-turn is said to reach the agent at its next step",
+      /next step/.test(waiting.textContent ?? "") && !/when this turn stops/.test(waiting.textContent ?? ""),
+      (waiting.textContent ?? "").slice(-200),
+    );
+  }
+
   section("a run of tool calls, collapsed");
   {
     const group = mount(

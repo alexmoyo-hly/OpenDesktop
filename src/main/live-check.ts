@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defaultConfig, loadConfig, saveConfig, setAgentLoader } from './config'
 import { listAgents, seedBuiltins } from './agents'
-import { runTurn } from './agent/runner'
+import { queueFollowUp, runTurn } from './agent/runner'
 import { logPath } from './log'
 import * as store from './store'
 
@@ -101,6 +101,8 @@ interface Scenario {
   name: string
   turns: string[]
   verify: (dir: string, answer: string) => boolean
+  /** Something typed while the first turn is working, after this long. */
+  steer?: { afterMs: number; text: string }
 }
 
 const SCENARIOS: Scenario[] = [
@@ -125,6 +127,12 @@ const SCENARIOS: Scenario[] = [
     name: 'background',
     turns: ['Lanza en segundo plano `sleep 25 && echo listo-25` y dime lo que imprime cuando termine.'],
     verify: (_dir, answer) => answer.includes('listo-25')
+  },
+  {
+    name: 'steer',
+    turns: ['Ejecuta `sleep 6` y, cuando termine, crea nota.txt con el texto foo.'],
+    steer: { afterMs: 2000, text: 'Cambio de planes: el texto de nota.txt tiene que ser bar, no foo.' },
+    verify: (dir) => existsSync(join(dir, 'nota.txt')) && read(dir, 'nota.txt').trim() === 'bar'
   },
   {
     name: 'follow-up',
@@ -155,9 +163,12 @@ async function run(model: string, scenario: Scenario): Promise<TurnReport[]> {
   const reports: TurnReport[] = []
   for (const [index, text] of scenario.turns.entries()) {
     const began = Date.now()
+    const steer = index === 0 ? scenario.steer : undefined
+    const timer = steer ? setTimeout(() => queueFollowUp(session.id, steer.text), steer.afterMs) : null
     await runTurn({ sessionId: session.id, userText: text }).catch((error: Error) => {
       console.log(`  turn threw: ${error.message}`)
     })
+    if (timer) clearTimeout(timer)
     const log = turnLog(session.id)
     const said = narration(session.id)
     const last = index === scenario.turns.length - 1

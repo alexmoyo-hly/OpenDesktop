@@ -89,6 +89,38 @@ export function queueFollowUp(sessionId: string, text: string): void {
   });
 }
 
+/** What was typed for a running turn and not yet taken by it; empties the queue. */
+function takeQueued(sessionId: string): string[] {
+  const waiting = store.getSession(sessionId)?.queuedFollowUps ?? [];
+  if (waiting.length > 0) store.updateSession(sessionId, { queuedFollowUps: undefined });
+  return waiting;
+}
+
+/** A message typed mid-turn, and where it joined: after `at` of the turn's own messages. */
+interface Steered {
+  at: number;
+  text: string;
+}
+
+/**
+ * The messages with what was typed mid-turn put back where it joined.
+ *
+ * The SDK hands each step the conversation without what an earlier step's
+ * prepareStep added, so it is re-inserted on every step — at the same place,
+ * which keeps the prefix (and the provider's cache) the same from step to step.
+ */
+function withSteering<T>(messages: T[], from: number, steered: Steered[], toMessage: (text: string) => T): T[] {
+  if (steered.length === 0) return messages;
+  const out = messages.slice(0, from);
+  const rest = messages.slice(from);
+  let next = 0;
+  for (let i = 0; i <= rest.length; i++) {
+    while (next < steered.length && steered[next].at === i) out.push(toMessage(steered[next++].text));
+    if (i < rest.length) out.push(rest[i]);
+  }
+  return out;
+}
+
 /**
  * The person overrules a refusal of the auto-approve rules: that exact call is
  * allowed once, and the agent is told to make it again — at its next step when
@@ -1154,7 +1186,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
    * answer belongs at the end of it, under the blocks it is about, rather than
    * as a second reply with no question in front of it.
    */
-  const assistant: Message =
+  let assistant: Message =
     (continuing
       ? store
           .listMessages(session.id)
@@ -1651,6 +1683,10 @@ export async function runTurn(input: TurnInput): Promise<string> {
         : {}),
     };
 
+    // Messages typed mid-turn: where each joined the model's view, and which the transcript has yet to show.
+    const steered: Steered[] = [];
+    const toShow: string[] = [];
+    let opening = 0;
     const result = streamText({
       model: resolved.model,
       system: systemText,
@@ -1704,9 +1740,22 @@ export async function runTurn(input: TurnInput): Promise<string> {
        * cache — is untouched. The ceiling stays as the backstop it should be.
        */
       prepareStep: ({ messages: soFar, stepNumber, steps: done }) => {
+        if (stepNumber === 0) opening = soFar.length;
+        // Typed while the turn works: it joins here, after the last step's results.
+        const typed = stepNumber > 0 ? takeQueued(session.id) : [];
+        if (typed.length > 0) {
+          const said = typed.join("\n\n");
+          steered.push({ at: soFar.length - opening, text: said });
+          toShow.push(said);
+        }
+        const withSaid = withSteering(soFar, opening, steered, (content) => ({
+          role: "user" as const,
+          content,
+        }));
+        const changed = dropReasoning || steered.length > 0;
         const base = dropReasoning
-          ? pruneMessages({ messages: soFar, reasoning: "all" })
-          : soFar;
+          ? pruneMessages({ messages: withSaid, reasoning: "all" })
+          : withSaid;
         // Last thing read on every step, so a long turn cannot drift from it; never saved.
         const pinned = config.pinned
           ? [{ role: "user" as const, content: `<pinned>${config.pinned}</pinned>` }]
@@ -1714,7 +1763,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
         // The first step is the one the conversation already opened with.
         if (stepNumber === 0) {
           if (pinned.length > 0) return { messages: [...base, ...pinned] };
-          return dropReasoning ? { messages: base } : {};
+          return changed ? { messages: base } : {};
         }
         const notes: string[] = [];
         const { count: repeats, call: repeated } = repeatedCalls(done);
@@ -1754,7 +1803,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
           );
         }
         if (notes.length === 0 && pinned.length === 0) {
-          return dropReasoning ? { messages: base } : {};
+          return changed ? { messages: base } : {};
         }
         return {
           messages: [
@@ -1940,6 +1989,23 @@ export async function runTurn(input: TurnInput): Promise<string> {
           );
           break;
         }
+        case "start-step": {
+          // In stream order, so whatever the last step still had to show is already above it.
+          if (toShow.length === 0) break;
+          const said = toShow.splice(0).join("\n\n");
+          store.updateMessage(session.id, assistant.id, { completedAt: Date.now() });
+          store.addMessage({ sessionId: session.id, role: "user", parts: [{ type: "text", text: said }] });
+          assistant = store.addMessage({
+            sessionId: session.id,
+            role: "assistant",
+            parts: [],
+            agentId: agent.id,
+            model: session.model,
+          });
+          textPartIndex = -1;
+          reasoningPartIndex = -1;
+          break;
+        }
         case "finish-step": {
           steps++;
           cacheRead += part.usage.inputTokenDetails?.cacheReadTokens ?? 0;
@@ -2075,7 +2141,12 @@ export async function runTurn(input: TurnInput): Promise<string> {
       );
     }
 
-    const responseMessages = (await result.responseMessages) as ModelMessage[];
+    const responseMessages = withSteering(
+      (await result.responseMessages) as ModelMessage[],
+      0,
+      steered,
+      (content): ModelMessage => ({ role: "user", content }),
+    );
     history.appendHistory(
       session.id,
       dropReasoning

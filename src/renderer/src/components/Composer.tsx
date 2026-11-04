@@ -916,10 +916,10 @@ export function Composer({ session }: { session: Session }): ReactNode {
         {busy && (text.trim() || (session.queuedFollowUps?.length ?? 0) > 0) ? (
           <div className="text-ink-500 mt-1.5 px-1 text-[11.5px]">
             {text.trim()
-              ? "↵ adds this to the queue — it goes as the next turn when this one stops."
+              ? "↵ sends this to the agent at its next step, without stopping the turn."
               : `${session.queuedFollowUps?.length} message${
                   (session.queuedFollowUps?.length ?? 0) === 1 ? "" : "s"
-                } queued — they go when this turn stops.`}
+                } waiting for the agent's next step — or the next turn, if this one is finishing.`}
           </div>
         ) : null}
 
