@@ -308,6 +308,18 @@ export function isManager(agentId: string | undefined): boolean {
   return agentId === MANAGER_AGENT || agentId === AUTO_AGENT || !agentId;
 }
 
+/** Auto-approve rules in prose, one per line, as Claude Code's auto mode writes them. */
+export interface AutoModePolicy {
+  /** Context the judge needs: what this machine is, what is trusted. */
+  environment: string[];
+  /** Exceptions: what is fine even when a deny rule seems to reach it. */
+  allow: string[];
+  /** What is refused unless the person asked for it in the conversation. */
+  deny: string[];
+  /** The judge, as `provider/model`. Unset, the small model, else the main one. */
+  model?: string;
+}
+
 export interface AppConfig {
   $schema?: string;
   model: string;
@@ -327,6 +339,12 @@ export interface AppConfig {
   mode?: LegacyMode;
   /** Whether a new session starts without approval prompts. */
   autoApprove?: boolean;
+  /**
+   * Rules in prose for a session that runs without asking: each call that would
+   * otherwise have asked is judged against them by a model. The denylist and a
+   * tool set to `deny` still come first. No `allow` or `deny` line, no judging.
+   */
+  autoMode?: AutoModePolicy;
   /**
    * What shunt delegates reading to, as `provider/model`. Unset, the cheapest
    * model that clears the capability floor is chosen for each job.

@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import type {
   AgentConfig,
   AppConfig,
+  AutoModePolicy,
   EnvironmentConfig,
   Permissions,
   ProviderConfig,
@@ -313,6 +314,27 @@ function wallClock(raw: Record<string, unknown>): number {
   return written;
 }
 
+function lines(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((line): line is string => typeof line === "string")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+// Hand-editable: only lines of text count as rules, whatever else is in there.
+function autoModeOf(raw: unknown): AutoModePolicy | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const policy = raw as Record<string, unknown>;
+  const model = typeof policy.model === "string" ? policy.model.trim() : "";
+  return {
+    environment: lines(policy.environment),
+    allow: lines(policy.allow),
+    deny: lines(policy.deny),
+    ...(model ? { model } : {}),
+  };
+}
+
 export function normalizeConfig(raw: Record<string, unknown>): AppConfig {
   const base = defaultConfig();
   const merged: AppConfig = {
@@ -326,6 +348,7 @@ export function normalizeConfig(raw: Record<string, unknown>): AppConfig {
     // Only ever true when it says true: a config is hand-editable, and
     // "yes" or 1 must not be what turns the prompts off.
     autoApprove: raw.autoApprove === true,
+    autoMode: autoModeOf(raw.autoMode),
     // Only the two switches this app has, and only as booleans: a config is
     // hand-editable, and `"rtk": "yes"` should not switch anything on.
     savings: {

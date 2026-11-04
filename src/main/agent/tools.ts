@@ -12,6 +12,7 @@ import {
   requestApproval,
   withoutPrompts
 } from '../approvals'
+import { hasPolicy, judgeCall } from '../auto-policy'
 import { diffStats, renderDiff } from '../diff'
 import { shellQuote, type Runtime } from '../runtime'
 import {
@@ -132,6 +133,28 @@ function autoNow(ctx: ToolContext): boolean {
   return (session ? store.rootOf(session).autoApprove : undefined) ?? ctx.autoApprove === true
 }
 
+function needsPerson(
+  ctx: ToolContext,
+  tool: string,
+  spec: PermissionSpec,
+  decision: ReturnType<typeof decide>,
+  auto: boolean
+): boolean {
+  const outsideWrite = (spec.writesOutside?.length ?? 0) > 0 && !auto
+  const mode = (spec.outsideCwd || outsideWrite) && decision.mode === 'allow' && !auto ? 'ask' : decision.mode
+  return (
+    mode === 'ask' &&
+    (outsideWrite || ((!decision.preapproved || spec.forceAsk === true) && !isGranted(ctx.sessionId, tool, spec.command)))
+  )
+}
+
+// What the policy judge is shown: the call as the approval card would show it.
+function actionOf(block: Block, spec: PermissionSpec): string {
+  const outside = spec.writesOutside?.length ? `\nWrites outside the working folder: ${spec.writesOutside.join(', ')}` : ''
+  const preview = spec.preview ? `\n${spec.preview.slice(0, 1500)}` : ''
+  return `${block.tool}: ${spec.command ?? spec.detail}${outside}${preview}`
+}
+
 async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpec): Promise<void> {
   const auto = autoNow(ctx)
   const decision = decide(auto ? withoutPrompts(ctx.permissions) : ctx.permissions, spec.key, spec.command)
@@ -146,12 +169,17 @@ async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpe
     throw new PermissionDenied(spec.detail, decision.deniedBy ?? `${spec.key} is set to deny`)
   }
 
-  const outsideWrite = (spec.writesOutside?.length ?? 0) > 0 && !auto
-  const mode = (spec.outsideCwd || outsideWrite) && decision.mode === 'allow' && !auto ? 'ask' : decision.mode
-  const needsAsk =
-    mode === 'ask' &&
-    (outsideWrite ||
-      ((!decision.preapproved || spec.forceAsk === true) && !isGranted(ctx.sessionId, block.tool, spec.command)))
+  let needsAsk = needsPerson(ctx, block.tool, spec, decision, auto)
+  const asksWithoutAuto = () => needsPerson(ctx, block.tool, spec, decide(ctx.permissions, spec.key, spec.command), false)
+  if (auto && hasPolicy(ctx.config) && asksWithoutAuto()) {
+    const verdict = await judgeCall(ctx.config, ctx.sessionId, actionOf(block, spec), ctx.cwd)
+    if (verdict && !verdict.allowed) {
+      const why = `auto-approve policy — ${verdict.rule || 'a deny rule'}: ${verdict.reason || 'no reason given'}`
+      store.updateBlock(ctx.sessionId, block.id, { status: 'error', error: `Blocked by the ${why}`, endedAt: Date.now() })
+      throw new PermissionDenied(spec.detail, why)
+    }
+    needsAsk = verdict === null
+  }
   if (!needsAsk) return
 
   const was = store.getBlock(ctx.sessionId, block.id)?.status
@@ -166,7 +194,7 @@ async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpe
     summary: block.subtitle,
     preview: spec.preview,
     command: spec.command,
-    ...(outsideWrite ? { outside: spec.writesOutside } : {}),
+    ...(spec.writesOutside?.length ? { outside: spec.writesOutside } : {}),
     environmentId: ctx.environmentId,
     cwd: ctx.cwd
   })

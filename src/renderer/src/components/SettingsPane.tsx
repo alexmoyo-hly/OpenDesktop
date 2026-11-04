@@ -23,6 +23,7 @@ import { SkillsTab } from "./SkillsTab";
 import { ToolServersTab } from "./ToolServersTab";
 import { HooksTab } from "./HooksTab";
 import { NotificationsTab } from "./NotificationsTab";
+import { AutoModeRules } from "./AutoModeRules";
 import { Hint, IconButton, Row, Section, Toggle } from "./settings-ui";
 
 type Page =
@@ -115,7 +116,7 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
         id: "config",
         label: "Config file",
         icon: <FileJson2 className="h-4 w-4" />,
-        keywords: "json raw edit secrets placeholder env file",
+        keywords: "json raw edit secrets placeholder env file approvals approve auto-approve auto mode rules policy allow deny",
       },
     ],
   },
@@ -229,7 +230,7 @@ function Approvals(): ReactNode {
     >
       <Row
         label="New sessions run without asking"
-        description="Lifts every “ask” to “allow” for the session. Nothing else changes: a tool set to deny stays denied, and the denylist is checked before any of this, so what it cannot run it still cannot run. Each session can be switched either way from the composer."
+        description="Lifts every “ask” to “allow” for the session, except what the rules below refuse. A tool set to deny stays denied, and the denylist is checked before any of this, so what it cannot run it still cannot run. Each session can be switched either way from the composer."
       >
         <Toggle
           checked={config.autoApprove === true}
@@ -240,6 +241,14 @@ function Approvals(): ReactNode {
           }}
         />
       </Row>
+      <AutoModeRules
+        policy={config.autoMode}
+        onSave={(autoMode) => {
+          void window.opendesktop.config
+            .save({ ...config, autoMode })
+            .then(() => refreshConfig());
+        }}
+      />
     </Section>
   );
 }

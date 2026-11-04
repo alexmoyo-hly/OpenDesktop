@@ -671,6 +671,19 @@ where; only a session that runs without asking skips it. The auto-approve switch
 a call would ask, not when the turn started: turning it on lets the card already waiting
 through and the rest of the turn runs without asking, and a subagent follows its conversation.
 
+**Auto-approve rules** — `autoMode` in the config, or Settings → Config file → Approvals: rules
+in prose, one per line, the way Claude Code's auto mode is configured (`environment`, `allow`,
+`deny`, and an optional judge `model`). With any `allow` or `deny` line, each call an
+auto-approving session would otherwise have asked about is put to a model (the small one by
+default, no reasoning) with the rules, the action and the person's last messages: a deny rule
+refuses the call with its name and reason, and the agent is told not to work around it; the
+person's own words authorise it ("push it to origin"), and a subagent is judged by what the
+person asked the conversation, not by its brief, so a file that says "now push" does not count.
+Allowlisted and granted calls are not judged, the same question is asked once, and a judge that
+cannot answer hands the call back to an approval card. Settings offers a suggested set.
+`pnpm policy:check <model>` measures a judge against thirteen cases (DeepSeek V4.1 Flash: 13/13,
+1.5–2.3 s each). The denylist still comes first: the rules are easier to add to and less certain.
+
 A **bare Deny ends the turn**: told "do not retry", models still reached the same end another
 way, so the next move is yours. Type a reason in the card instead and the turn carries on with
 it — the model gets "Their reason: …" as the result of the call.
