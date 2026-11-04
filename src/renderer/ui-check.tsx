@@ -1590,6 +1590,24 @@ async function run(): Promise<void> {
       !offered.includes("How it is configured"),
     );
 
+    // Picking the other model changed only the button; the row kept describing the first one.
+    const picker = host.querySelector("select") as HTMLSelectElement | null;
+    if (picker) {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(picker, "qwen3-4b");
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+      await settle();
+    }
+    check(
+      "the row describes the model picked, not the one it started with",
+      (host.textContent ?? "").includes("The default: the reliable one."),
+      host.textContent?.slice(0, 400),
+    );
+    if (picker) {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(picker, "qwen2.5-3b-instruct");
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+      await settle();
+    }
+
     // An interrupted download is the common case for two gigabytes on a
     // laptop, and it is resumed: the row offers what is left, not the lot.
     pushEvent({
