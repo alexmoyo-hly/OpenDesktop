@@ -8,7 +8,7 @@ import { boot, finish, newSession, useModel } from './helpers'
 beforeAll(boot)
 
 /** First request delegates to `explore`; every later one (the subagent's) streams nothing until aborted. */
-function delegatingThenHanging(aborted: { count: number }): LanguageModel {
+function delegatingThenHanging(aborted: { count: number; inFlight?: boolean }): LanguageModel {
   let calls = 0
   return new MockLanguageModelV4({
     doStream: async ({ abortSignal }: { abortSignal?: AbortSignal }) => {
@@ -28,6 +28,7 @@ function delegatingThenHanging(aborted: { count: number }): LanguageModel {
       }
       // Like fetch: a request made with a signal that is already aborted fails at once.
       if (abortSignal?.aborted) throw new DOMException('aborted', 'AbortError')
+      aborted.inFlight = true
       return {
         stream: new ReadableStream({
           start(controller) {
@@ -44,13 +45,14 @@ function delegatingThenHanging(aborted: { count: number }): LanguageModel {
 }
 
 test('stopping a turn stops the subagents it started', async () => {
-  const aborted = { count: 0 }
+  const aborted: { count: number; inFlight?: boolean } = { count: 0 }
   useModel(delegatingThenHanging(aborted))
   const parent = newSession({ agentId: 'manager' })
   const turn = runTurn({ sessionId: parent.id, userText: 'delegate' })
 
+  // Running is not enough: under load the stop landed before the subagent's request was made.
   let child = undefined as ReturnType<typeof store.listSessions>[number] | undefined
-  for (let i = 0; i < 50 && !child; i++) {
+  for (let i = 0; i < 100 && !(child && aborted.inFlight); i++) {
     await new Promise((resolve) => setTimeout(resolve, 50))
     child = store.listSessions().find((s) => s.parentSessionId === parent.id && isRunning(s.id))
   }
