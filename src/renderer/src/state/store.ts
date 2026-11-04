@@ -320,7 +320,10 @@ export const useStore = create<State>((set, get) => ({
       ready: true,
     });
 
-    if (sessions.length > 0) await get().selectSession(sessions[0].id);
+    // A window opened by clicking a notification shows the conversation it was about.
+    const asked = await api().host.pendingFocus();
+    const opening = sessions.find((s) => s.id === asked) ?? sessions[0];
+    if (opening) await get().selectSession(opening.id);
     else await get().newSession();
   },
 

@@ -37,6 +37,14 @@ const asked = new Set<string>();
 const onScreen = new Set<Notification>();
 
 let started = false;
+let pendingFocus: string | null = null;
+
+/** The conversation a notification asked for before there was a window to show it in. */
+export function takePendingFocus(): string | null {
+  const sessionId = pendingFocus;
+  pendingFocus = null;
+  return sessionId;
+}
 
 export function startNotifications(): void {
   if (started) return;
@@ -201,11 +209,16 @@ function send(
     // it. Selecting the session is the renderer's job — it is the only side
     // that knows what the panes are showing — so it is asked for as an event.
     const win = BrowserWindow.getAllWindows()[0];
-    if (win && !win.isDestroyed()) {
-      if (win.isMinimized()) win.restore();
-      win.show();
-      win.focus();
+    if (!win || win.isDestroyed()) {
+      // Every window closed (macOS keeps the app running): open one the way the Dock would,
+      // and leave the conversation for its renderer to ask for once it has loaded.
+      pendingFocus = sessionId ?? null;
+      app.emit("activate");
+      return;
     }
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
     if (sessionId) bus.emit({ type: "session.focus", sessionId });
   });
 

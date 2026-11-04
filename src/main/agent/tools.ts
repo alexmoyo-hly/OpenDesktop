@@ -198,7 +198,8 @@ async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpe
     environmentId: ctx.environmentId,
     cwd: ctx.cwd
   })
-  store.setSessionStatus(ctx.sessionId, 'running')
+  // A card refused by Stop: the session is idle already, and running again announced a second end.
+  if (!ctx.signal.aborted) store.setSessionStatus(ctx.sessionId, 'running')
   if (answer === 'reject') {
     store.updateBlock(ctx.sessionId, block.id, {
       status: 'canceled',

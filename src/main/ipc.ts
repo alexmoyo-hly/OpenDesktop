@@ -28,7 +28,7 @@ import {
 } from "./local-model";
 import { meterSnapshot, resetMeter } from "./meter";
 import { logLine, logPath } from "./log";
-import { notificationsSupported, testNotification } from "./notifications";
+import { notificationsSupported, takePendingFocus, testNotification } from "./notifications";
 import { describeError } from "@shared/errors";
 import { readForEditor, writeFromEditor } from "./editor";
 import { describeNeighbours } from "./coordination";
@@ -1154,6 +1154,7 @@ export function registerIpc(): void {
     return result.canceled ? null : result.filePaths[0];
   });
   ipcMain.handle("host:logPath", () => logPath());
+  ipcMain.handle("host:pendingFocus", () => takePendingFocus());
   ipcMain.handle("host:revealLog", () => shell.showItemInFolder(logPath()));
   ipcMain.handle("host:openExternal", (_e, url: string) =>
     /^https?:\/\//i.test(url) ? shell.openExternal(url) : undefined,

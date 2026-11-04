@@ -483,6 +483,7 @@ const api = {
     pickFolder: (): Promise<string | null> =>
       ipcRenderer.invoke("host:pickFolder"),
     logPath: (): Promise<string> => ipcRenderer.invoke("host:logPath"),
+    pendingFocus: (): Promise<string | null> => ipcRenderer.invoke("host:pendingFocus"),
     revealLog: (): Promise<void> => ipcRenderer.invoke("host:revealLog"),
     openExternal: (url: string): Promise<void> =>
       ipcRenderer.invoke("host:openExternal", url),
