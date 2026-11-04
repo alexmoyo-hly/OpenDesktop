@@ -206,6 +206,7 @@ function ProviderSection({
       name: string
       contextWindow?: number
       vision?: boolean
+      reasoning?: boolean
       price?: { input?: number; output?: number }
     }[]
   ): void => {
@@ -457,6 +458,27 @@ function ProviderSection({
                   )}
                 >
                   vision
+                </button>
+                <button
+                  type="button"
+                  title={
+                    model.reasoning
+                      ? 'The effort dial sends this model its reasoning setting'
+                      : 'Mark this model as one that reasons, so the effort dial reaches it'
+                  }
+                  onClick={() => {
+                    const next = models.slice()
+                    next[index] = { ...model, reasoning: !model.reasoning }
+                    setModels(next)
+                  }}
+                  className={clsx(
+                    'rounded-md border px-2 py-1.5 text-[11px]',
+                    model.reasoning
+                      ? 'border-ok/40 bg-ok/10 text-ok'
+                      : 'border-ink-800 text-ink-600 hover:text-ink-300'
+                  )}
+                >
+                  reasoning
                 </button>
                 <IconButton
                   title="Remove model"

@@ -1122,6 +1122,13 @@ async function run(): Promise<void> {
       host.scrollWidth <= host.clientWidth + 1,
       { scroll: host.scrollWidth, client: host.clientWidth },
     );
+    // The effort dial's hint sends people here to mark a model as reasoning, so the switch must exist.
+    check(
+      "a model can be marked as reasoning, beside vision",
+      [...host.querySelectorAll("button")].some((b) => b.textContent === "reasoning") &&
+        [...host.querySelectorAll("button")].some((b) => b.textContent === "vision"),
+      [...host.querySelectorAll("button")].map((b) => b.textContent).filter(Boolean).slice(0, 20),
+    );
     const narrow = mount(<ModelsTab />, 620);
     await settle();
     check(
@@ -1863,6 +1870,16 @@ async function run(): Promise<void> {
       "and it says what it will ask the model for: the level and the step ceiling",
       /Thinking high/.test(smart) && !/\dk/.test(smart) && /60 steps/.test(smart),
       smart,
+    );
+    // Anthropic cannot be asked for no thinking, so the bottom of the scale sends `minimal`.
+    const lowest = mount(<EffortDial session={{ ...session, effort: 1 }} />, 200);
+    await settle();
+    lowest.querySelector("button")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await settle();
+    check(
+      "and at the bottom it says what is really sent, not 'No thinking'",
+      /Thinking minimal/.test(lowest.textContent ?? ""),
+      lowest.textContent,
     );
     useStore.setState({ config: before });
   }

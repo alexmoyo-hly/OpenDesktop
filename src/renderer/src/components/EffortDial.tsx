@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Session } from '@shared/types'
-import { DEFAULT_EFFORT, EFFORT_LEVELS, canReason, effortLevel } from '@shared/effort'
+import { DEFAULT_EFFORT, EFFORT_LEVELS, canReason, effortLevel, reasoningLevel } from '@shared/effort'
 import { useStore } from '../state/store'
 
 /**
@@ -40,11 +40,11 @@ export function EffortDial({ session }: { session: Session }): ReactNode {
 
   const level = effortLevel(session.effort)
   const slash = session.model.indexOf('/')
-  const model =
-    slash === -1
-      ? undefined
-      : config.provider[session.model.slice(0, slash)]?.models[session.model.slice(slash + 1)]
+  const provider = slash === -1 ? undefined : config.provider[session.model.slice(0, slash)]
+  const model = provider?.models[session.model.slice(slash + 1)]
   const thinks = canReason(model)
+  // What is really sent: Anthropic cannot be asked for none, so its bottom level is `minimal`.
+  const sent = reasoningLevel(provider?.npm ?? '', level)
   const steps = Math.max(1, Math.round((config.maxSteps ?? 60) * level.steps))
 
   /*
@@ -120,14 +120,12 @@ export function EffortDial({ session }: { session: Session }): ReactNode {
             title={
               thinks
                 ? 'Sent to the model as its reasoning setting, with a ceiling on the steps a turn may take'
-                : `${model?.name ?? session.model} declares no reasoning setting, so the dial only moves the step ceiling. Mark it as reasoning under Providers & keys to have the dial reach it.`
+                : `${model?.name ?? session.model} declares no reasoning setting, so the dial only moves the step ceiling. Mark it as reasoning under Providers & keys (the “reasoning” switch beside the model) to have the dial reach it.`
             }
           >
             {thinks ? (
               <>
-                {level.reasoning === 'off'
-                  ? 'No thinking'
-                  : `Thinking ${level.reasoning}`}
+                {sent === 'none' ? 'No thinking' : `Thinking ${sent}`}
                 {' · '}
                 {steps} steps
               </>
