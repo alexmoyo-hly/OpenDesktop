@@ -34,6 +34,22 @@ describe('plan mode', () => {
     expect(JSON.stringify(seen[0].prompt)).toMatch(/# Plan mode/)
   })
 
+  // Found live: after a plan was run, the next message in plan mode went straight to edits the gate refused.
+  test('the message itself carries the reminder, last thing the model reads, once', async () => {
+    const session = newSession({ autoApprove: true, planMode: true })
+    const seen: Captured[] = []
+    useModel(
+      scriptedModel(
+        [{ calls: [{ tool: 'bash', input: { command: 'ls', description: 'look' } }] }, { text: '1. Do it.' }],
+        seen
+      )
+    )
+    await runTurn({ sessionId: session.id, userText: 'add max to util.js' })
+    const last = JSON.stringify(seen[0].prompt.at(-1))
+    expect(last).toMatch(/<plan-mode>/)
+    expect((JSON.stringify(seen[1].prompt).match(/<plan-mode>/g) ?? []).length).toBe(1)
+  })
+
   test('off, nothing about it reaches the model', async () => {
     const session = newSession({ autoApprove: true })
     const seen: Captured[] = []

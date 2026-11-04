@@ -1874,6 +1874,13 @@ export async function runTurn(input: TurnInput): Promise<string> {
         if (config.pinned && stepNumber % PIN_EVERY === 0) {
           notes.push(`<pinned>${config.pinned}</pinned>`);
         }
+        // A conversation that just ran a plan reads as "keep editing"; the last word says otherwise.
+        if (planMode && stepNumber === 0) {
+          notes.push(
+            `<plan-mode>Plan mode is on for this message: change nothing. Read what you need, ` +
+              `then answer with the plan.</plan-mode>`,
+          );
+        }
         const base = dropReasoning
           ? pruneMessages({ messages: soFar, reasoning: "all" })
           : soFar;
