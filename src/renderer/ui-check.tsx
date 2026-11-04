@@ -31,7 +31,7 @@ import { ContextMeter } from "./src/components/ContextMeter";
 import { RowInput } from "./src/components/settings-ui";
 import { AutoModeRules } from "./src/components/AutoModeRules";
 import { SUGGESTED_AUTO_MODE } from "@shared/auto-mode";
-import { money } from "./src/lib/settings";
+import { money, spendLabel } from "./src/lib/settings";
 import { duration, tokens } from "./src/lib/format";
 import { ToolServerChip } from "./src/components/ToolServerChip";
 import { ToolServersTab } from "./src/components/ToolServersTab";
@@ -594,6 +594,8 @@ async function run(): Promise<void> {
   {
     const took = (ms: number): string => duration(block({ createdAt: 0, startedAt: 0, endedAt: ms }));
     check("a duration that rounds to a minute is shown in minutes", took(59_900) === "59.9s" && took(59_960) === "1m 0s", [took(59_900), took(59_960)]);
+    const both = spendLabel({ cost: 4, tokens: 850_000 } as never, { usd: 400, tokens: 1_000_000, period: "month" } as never);
+    check("with a money and a token limit, both figures are shown, so the percentage beside them adds up", /\$/.test(both) && /850,000/.test(both), both);
     check("a token count that rounds to a million is shown in millions", tokens(999_940) === "999.9k" && tokens(999_950) === "1.00M", [tokens(999_940), tokens(999_950)]);
   }
 
