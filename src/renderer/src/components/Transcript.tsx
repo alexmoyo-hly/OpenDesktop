@@ -172,8 +172,10 @@ export function ToolGroup({ blocks }: { blocks: Block[] }): ReactNode {
   const rest = blocks.filter((b) => b.tool !== 'task')
 
   const summary = useMemo(() => summarize(rest), [rest])
-  const added = rest.reduce((sum, b) => sum + (b.added ?? 0), 0)
-  const removed = rest.reduce((sum, b) => sum + (b.removed ?? 0), 0)
+  // A refused or failed edit changed nothing, so its lines are not counted.
+  const applied = rest.filter((b) => b.status !== 'error' && b.status !== 'canceled')
+  const added = applied.reduce((sum, b) => sum + (b.added ?? 0), 0)
+  const removed = applied.reduce((sum, b) => sum + (b.removed ?? 0), 0)
 
   const running = rest.some((b) => b.status === 'running' || b.status === 'pending')
   const awaiting = rest.some((b) => b.status === 'awaiting-approval')

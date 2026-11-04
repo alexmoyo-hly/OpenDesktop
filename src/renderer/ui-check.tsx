@@ -761,6 +761,20 @@ async function run(): Promise<void> {
       !/Updated/.test(refused.textContent ?? "") && /Couldn't update 2 files/.test(refused.textContent ?? ""),
       refused.textContent,
     );
+    const counted = mount(
+      <ToolGroup
+        blocks={[
+          { ...edit("e8", "util.js"), added: 3, removed: 1 },
+          { ...edit("e9", "test.js", "error"), added: 6, removed: 2 },
+        ]}
+      />,
+    );
+    await settle();
+    check(
+      "and their lines are not counted as changed",
+      /\+3/.test(counted.textContent ?? "") && /-1/.test(counted.textContent ?? "") && !/\+9|-3/.test(counted.textContent ?? ""),
+      counted.textContent,
+    );
 
     const saves: Record<string, string>[] = [];
     const rows = mount(<VerifyChecks value={{ "/work/shop": "pnpm typecheck" }} onSave={(next) => saves.push(next)} />);
