@@ -37,6 +37,7 @@ import { effectivePermissions, resolvedConfig } from "../config";
 import { bus } from "../bus";
 import { allowOnce, resetPolicyBreaker } from "../auto-policy";
 import { runVerify, verifyCommandFor } from "../verify";
+import { checkCompletion, unfinishedNote } from "../completion";
 import {
   PermissionDenied,
   autoApproving,
@@ -69,6 +70,9 @@ import {
 import { modelAcceptsImages, readAttachment } from "../attachments";
 
 const controllers = new Map<string, AbortController>();
+
+/** How many times one message may be carried on because a check found it unfinished. */
+const MAX_COMPLETION_CHECKS = 2;
 
 /** Tool calls in a turn after which an agent without a checklist is asked to keep one. */
 const PLAN_AFTER_CALLS = 6;
@@ -1072,7 +1076,8 @@ interface TurnInput {
    * already there. `attempt` counts how many times it has been asked, so a
    * model that says nothing however often it is asked is eventually left alone.
    */
-  continuation?: { attempt: number; messageId: string };
+  /** `missing`: carried on because a check found part of the request undone; `checks`: how many times so far. */
+  continuation?: { attempt: number; messageId: string; missing?: string; checks?: number };
 }
 
 /**
@@ -1224,6 +1229,9 @@ export async function runTurn(input: TurnInput): Promise<string> {
    * (both belong to the end of a turn, not to an attempt).
    */
   let willContinue = false;
+  // A check after the turn found part of the request undone: carry on with this.
+  let unfinished: string | null = null;
+  let callsThisTurn = 0;
 
   /**
    * Armed when the request goes out, cleared by the first thing that comes
@@ -1579,7 +1587,9 @@ export async function runTurn(input: TurnInput): Promise<string> {
      * had asked twice.
      */
     const lead = continuing
-      ? continuationNote(continuing.attempt)
+      ? continuing.missing
+        ? unfinishedNote(continuing.missing)
+        : continuationNote(continuing.attempt)
       : (input.handover ?? "") +
         expanded.prompt +
         mentionDirective(config, input.userText);
@@ -2142,6 +2152,7 @@ export async function runTurn(input: TurnInput): Promise<string> {
           break;
         }
         case "tool-call":
+          callsThisTurn++;
           // The block is created by the tool itself, which knows its own shape.
           // Resetting the text cursor keeps prose after a tool call in its own bubble.
           textPartIndex = -1;
@@ -2269,13 +2280,62 @@ export async function runTurn(input: TurnInput): Promise<string> {
     const attempts = continuing?.attempt ?? 0;
     willContinue = silentEnding && attempts < SILENT_CONTINUATIONS;
 
+    const checks = continuing?.checks ?? 0;
+    if (
+      !willContinue &&
+      config.completionCheck !== false &&
+      (input.depth ?? 0) === 0 &&
+      (callsThisTurn > 0 || continuing?.missing !== undefined) &&
+      checks < MAX_COMPLETION_CHECKS &&
+      streamFailure === null &&
+      !deniedStopped &&
+      !controller.signal.aborted &&
+      store.getSession(session.id)?.status !== "blocked" &&
+      !(store.getSession(session.id)?.queuedFollowUps?.length) &&
+      !input.collectFinalText
+    ) {
+      const did = [
+        ...store
+          .listBlocks(session.id)
+          .filter((block) => block.createdAt >= startedAt && block.tool !== "completion")
+          .map((block) => `- ${block.tool}: ${block.title} (${block.status})`),
+        "",
+        `Last words: ${finalText.slice(-2000)}`,
+      ].join("\n");
+      const verdict = await checkCompletion(config, { asked: input.userText, did });
+      if (verdict) {
+        logLine(
+          "info",
+          `turn ${session.id} completion check: ${verdict.done ? "finished" : `not finished — ${verdict.missing ?? ""}`}`,
+        );
+      }
+      if (verdict && !verdict.done) {
+        unfinished = verdict.missing || "part of the request";
+        const note = store.createBlock({
+          sessionId: session.id,
+          messageId: assistant.id,
+          tool: "completion",
+          title: `Not finished yet: ${unfinished}`,
+          subtitle: "Carrying on",
+          input: {},
+          cwd: session.cwd,
+          environmentId: session.environmentId,
+          agentId: agent.id,
+          status: "success",
+          startedAt: Date.now(),
+          endedAt: Date.now(),
+        });
+        store.pushPart(session.id, assistant.id, { type: "block", blockId: note.id });
+      }
+    }
+
     const ended = store.getSession(session.id);
     // Only the difference. The steps have already been credited, and anything
     // else that spent against this session mid-turn — a delegated read, a
     // subagent's report — is in those totals too and must not be overwritten.
     creditSession(inputTokens, outputTokens, turnCost);
     store.updateSession(session.id, {
-      status: willContinue
+      status: willContinue || unfinished !== null
         ? // Still running: the next attempt starts in the `finally`, and a
           // moment of idle here would announce a turn that has not finished.
           "running"
@@ -2428,7 +2488,11 @@ export async function runTurn(input: TurnInput): Promise<string> {
     // A turn being carried on is still running; saying otherwise here would
     // announce a finish that has not happened, to the notification and to the
     // sidebar both.
-    if (!willContinue && store.getSession(session.id)?.status === "running")
+    if (
+      !willContinue &&
+      unfinished === null &&
+      store.getSession(session.id)?.status === "running"
+    )
       store.setSessionStatus(session.id, "idle");
     store.flush();
 
@@ -2463,6 +2527,27 @@ export async function runTurn(input: TurnInput): Promise<string> {
         parentBlockId: input.parentBlockId,
         coordinationNote: input.coordinationNote,
         continuation: { attempt, messageId: assistant.id },
+      }).catch(() => {
+        // runTurn records its own failures; nothing to add here.
+      });
+    } else if (unfinished !== null) {
+      // Awaited like the silent case: the same turn, carrying on with what was left.
+      logLine(
+        "info",
+        `turn ${session.id} checked as unfinished (${unfinished.slice(0, 120)}); carrying on`,
+      );
+      await runTurn({
+        sessionId: session.id,
+        userText: input.userText,
+        depth: input.depth,
+        parentBlockId: input.parentBlockId,
+        coordinationNote: input.coordinationNote,
+        continuation: {
+          attempt: 0,
+          messageId: assistant.id,
+          missing: unfinished,
+          checks: (input.continuation?.checks ?? 0) + 1,
+        },
       }).catch(() => {
         // runTurn records its own failures; nothing to add here.
       });

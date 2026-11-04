@@ -360,6 +360,7 @@ export function normalizeConfig(raw: Record<string, unknown>): AppConfig {
     autoApprove: raw.autoApprove === true,
     autoMode: autoModeOf(raw.autoMode),
     verify: verifyOf(raw.verify),
+    completionCheck: raw.completionCheck === false ? false : undefined,
     pinned:
       typeof raw.pinned === "string" && raw.pinned.trim()
         ? raw.pinned.trim()

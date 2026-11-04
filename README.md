@@ -719,6 +719,12 @@ turn is over. Past six tool calls in a turn without one, it is asked once to kee
 the tool's description was not enough for DeepSeek. It costs steps — measured on a three-part
 task, 6–8 steps and 31–42k input tokens (over 80% cached) against 4 and 19k without it.
 
+**Did it really finish?** — after a turn that did work and ended normally, a small model with no
+reasoning compares what was asked with what was done and said. When a concrete part was skipped
+without a word, the turn carries on with that part named (a "Not finished yet" row shows why),
+at most twice for one message; an agent that says why it could not do something counts as
+finished. After GitHub Copilot's Autopilot. `"completionCheck": false` turns it off.
+
 **Check after editing** — `"verify": { "/path/to/repo": "pnpm typecheck" }` in the config, or
 Settings → Agents → Every agent. After a step in which the agent wrote or edited a file — with
 the edit tools or a shell command that writes, since models edit with `sed -i` as often — the

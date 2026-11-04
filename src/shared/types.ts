@@ -370,6 +370,8 @@ export interface AppConfig {
   pinned?: string;
   /** The check run after a step that edited files, per folder: `{ "/work/shop": "pnpm typecheck" }`. */
   verify?: Record<string, string>;
+  /** After a turn that did work, check it finished what was asked and carry on if not. On unless false. */
+  completionCheck?: boolean;
   /**
    * What shunt delegates reading to, as `provider/model`. Unset, the cheapest
    * model that clears the capability floor is chosen for each job.
