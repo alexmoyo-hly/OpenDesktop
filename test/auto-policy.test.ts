@@ -285,4 +285,24 @@ describe('rehearsing rules on recent calls', () => {
     expect(asked.find((q) => q.action.includes('push'))?.asked).toEqual(['fix the readme'])
     expect(policyPaused(session.id)).toBeNull()
   })
+
+  // Found live: a copy the person asked for, three messages back, was judged as if nobody had asked.
+  test('each call is judged with what had been asked by then, not with the latest messages', async () => {
+    const asked = judging(() => ({ allowed: true }))
+    const session = newSession({ title: 'Long', autoApprove: false })
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 5))
+    const say = (text: string) => store.addMessage({ sessionId: session.id, role: 'user', parts: [{ type: 'text', text }] })
+    say('copy the fixture files into this folder')
+    await tick()
+    store.createBlock({ sessionId: session.id, messageId: 'm', tool: 'bash', title: 'cp', input: { command: 'cp /elsewhere/fixture/* .' }, cwd: session.cwd, environmentId: 'local', agentId: 'build', status: 'success' })
+    await tick()
+    for (const text of ['now rename a function', 'run the tests', 'run them again']) {
+      say(text)
+      await tick()
+    }
+    await rehearsePolicy(loadConfig(), RULES)
+    const question = asked.find((q) => q.action.includes('cp /elsewhere'))
+    expect(question?.asked).toContain('copy the fixture files into this folder')
+    expect(question?.asked).not.toContain('run them again')
+  })
 })

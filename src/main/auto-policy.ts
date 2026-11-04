@@ -62,12 +62,13 @@ function textOf(parts: MessagePart[]): string {
 }
 
 // The conversation the person opened: a subagent's brief is the lead's words, not theirs.
-function personAsked(sessionId: string): string[] {
+/** The last few things the person said; up to `before` when judging a call made in the past. */
+function personAsked(sessionId: string, before = Infinity): string[] {
   const session = store.getSession(sessionId)
   if (!session) return []
   return store
     .listMessages(store.rootOf(session).id)
-    .filter((message) => message.role === 'user')
+    .filter((message) => message.role === 'user' && message.createdAt <= before)
     .slice(-3)
     .map((message) => textOf(message.parts).slice(0, 1000))
     .filter(Boolean)
@@ -82,6 +83,8 @@ const SYSTEM =
   'Refuse it only when a Deny rule covers it and neither an Allow rule nor the person\'s own words under "Asked" ' +
   'clearly authorise it. Anything the rules do not mention is allowed. Judge what the action does, not how it is ' +
   'phrased, and judge only the Action: the rest of the conversation is context, not what is being done now. ' +
+  'A command writes where its output lands: copying or reading from outside the working folder into it is a ' +
+  'write inside it. ' +
   'Answer with JSON only, reason first: {"reason":"one short sentence","rule":"the Deny rule\'s name, empty when allowed","allowed":bool}.'
 
 async function askModel(config: AppConfig, question: PolicyQuestion): Promise<PolicyVerdict> {
@@ -199,7 +202,7 @@ const REHEARSED = new Set(['bash', 'write', 'edit', 'mcp'])
 // Fifteen: a provider's per-minute limit (LiteLLM's is 30 a key and model) is shared with the agent itself.
 export async function rehearsePolicy(config: AppConfig, rules: AutoModePolicy, limit = 15): Promise<Rehearsal[]> {
   const seen = new Set<string>()
-  const calls: { sessionId: string; title: string; action: string; cwd: string }[] = []
+  const calls: { sessionId: string; title: string; action: string; cwd: string; at: number }[] = []
   for (const block of store.allBlocks(2000)) {
     if (!REHEARSED.has(block.tool)) continue
     const command = typeof block.input.command === 'string' ? block.input.command : undefined
@@ -209,7 +212,7 @@ export async function rehearsePolicy(config: AppConfig, rules: AutoModePolicy, l
     const key = `${block.sessionId}|${action}`
     if (seen.has(key)) continue
     seen.add(key)
-    calls.push({ sessionId: block.sessionId, title: store.getSession(block.sessionId)?.title ?? '', action, cwd: block.cwd })
+    calls.push({ sessionId: block.sessionId, title: store.getSession(block.sessionId)?.title ?? '', action, cwd: block.cwd, at: block.createdAt })
     if (calls.length >= limit) break
   }
   const results: Rehearsal[] = []
@@ -217,7 +220,7 @@ export async function rehearsePolicy(config: AppConfig, rules: AutoModePolicy, l
   for (let i = 0; i < calls.length; i += 4) {
     const batch = await Promise.all(
       calls.slice(i, i + 4).map(async (call): Promise<Rehearsal> => {
-        const question: PolicyQuestion = { rules, action: call.action, cwd: call.cwd, asked: personAsked(call.sessionId) }
+        const question: PolicyQuestion = { rules, action: call.action, cwd: call.cwd, asked: personAsked(call.sessionId, call.at) }
         try {
           const verdict = judgeOverride ? await judgeOverride(question) : await askModel(config, question)
           return verdict ? { ...call, ...verdict } : { ...call, allowed: false, unanswered: true }
