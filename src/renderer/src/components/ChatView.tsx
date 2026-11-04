@@ -368,6 +368,8 @@ export function ChatView({ session }: { session: Session }): ReactNode {
       last = { top: el.scrollTop, height: el.scrollHeight, client: el.clientHeight }
     })
     observer.observe(inner)
+    // The view shrinks too when the box below it grows: a side answer, a long draft.
+    observer.observe(el)
     el.addEventListener('scroll', onScroll, { passive: true })
     inner.addEventListener('pointerdown', onPointer)
     return () => {

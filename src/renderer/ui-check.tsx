@@ -3520,6 +3520,18 @@ async function run(): Promise<void> {
       },
     );
 
+    // Found live: a side answer above the box made it taller, and the turn's end slid under it.
+    const taller = document.createElement("div");
+    taller.style.cssText = "height:200px;flex-shrink:0";
+    el.parentElement!.appendChild(taller);
+    await settle();
+    check(
+      "the box growing below the chat keeps the end in view",
+      distance() <= 4,
+      distance(),
+    );
+    taller.remove();
+
     useStore.setState({ messages: {} });
   }
 
