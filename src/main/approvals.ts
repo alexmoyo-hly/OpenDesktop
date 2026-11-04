@@ -172,7 +172,9 @@ export function releaseAutoApproved(
 ): number {
   let released = 0
   for (const [id, entry] of [...pending.entries()]) {
-    if (!autoApproves(entry.request.sessionId)) continue
+    // A card with a note was raised although the session runs without asking:
+    // the judge could not answer, or stopped judging. It is the person's alone.
+    if (entry.request.note || !autoApproves(entry.request.sessionId)) continue
     pending.delete(id)
     bus.emit({ type: 'approval.resolved', approvalId: id })
     entry.resolve({ answer: 'once' })
@@ -190,11 +192,17 @@ export function releasePending(): number {
   return releaseAutoApproved((sessionId) => autoApproving(rawConfig(), sessionId))
 }
 
-// The store announces every switch change here; listening, rather than being called
+// The store announces every session change here; listening, rather than being called
 // by the store, keeps store -> approvals -> store from becoming an import cycle.
-// ponytail: runs on every session update; pending is empty almost always.
+// Only a change of the switch releases anything: a draft typed, a status or a todo
+// list updated says nothing about whether this session should stop asking.
+const switches = new Map<string, boolean | undefined>()
 bus.subscribe((event) => {
-  if (event.type === 'session.updated') releasePending()
+  if (event.type !== 'session.updated') return
+  const { id, autoApprove } = event.session
+  const changed = switches.has(id) && switches.get(id) !== autoApprove
+  switches.set(id, autoApprove)
+  if (changed) releasePending()
 })
 
 /* ---------------- pattern matching ---------------- */
@@ -212,13 +220,16 @@ export function matchesAny(value: string, patterns: string[]): boolean {
 }
 
 // Redirections that touch no file: into /dev/null, or one stream into another (`2>&1`).
-const HARMLESS_REDIRECT = /(?:\d*>>?|&>>?)\s*\/dev\/null(?![\w/.])|\d*>&\d+/g
+// `>&1x` is not a stream: with a word after `>&`, bash writes that file.
+const HARMLESS_REDIRECT = /(?:\d*>>?|&>>?)\s*\/dev\/null(?![\w/.])|\d*>&\d+(?![\w./-])/g
 
 /**
  * The line as the shell parses it, same length, with quoted text blanked.
- * `'…'` is all data; `"…"` still runs `$(…)` and backquotes, so those stay.
+ * `'…'` and `$'…'` are all data; `"…"` still runs `$(…)` and backquotes, so
+ * those stay. A comment is blanked up to its newline, which still separates.
+ * `open` says a quote never closed: the shell would read past what is shown.
  */
-function unquoted(command: string): string {
+function scan(command: string): { mask: string; open: boolean } {
   let out = ''
   let quote = ''
   for (let i = 0; i < command.length; i += 1) {
@@ -229,9 +240,23 @@ function unquoted(command: string): string {
       if (next !== undefined) out += '_'
       i += 1
     } else if (!quote) {
-      if (char === "'" || char === '"') quote = char
-      out += char
-    } else if (char === quote) {
+      if (char === '$' && next === "'") {
+        // ANSI-C quoting: `$'\''` is one quote character, not the end of the string.
+        quote = "$'"
+        out += "$'"
+        i += 1
+      } else if (char === '#' && (i === 0 || /[\s;&|()<>]/.test(out[i - 1]))) {
+        // Read from the mask: after an escaped space (`\ #`) the `#` is mid-word, not a comment.
+        while (i < command.length && command[i] !== '\n') {
+          out += '_'
+          i += 1
+        }
+        i -= 1
+      } else {
+        if (char === "'" || char === '"') quote = char
+        out += char
+      }
+    } else if (char === quote || (quote === "$'" && char === "'")) {
       quote = ''
       out += char
     } else if (quote === '"' && char === '$' && next === '(') {
@@ -241,7 +266,11 @@ function unquoted(command: string): string {
       out += quote === '"' && char === '`' ? '`' : '_'
     }
   }
-  return out
+  return { mask: out, open: quote !== '' }
+}
+
+function unquoted(command: string): string {
+  return scan(command).mask
 }
 
 /** Whitespace-separated words, a quoted argument staying one word. */
@@ -274,13 +303,25 @@ const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh'])
 const WRAPPERS = new Set(['sudo', 'env', 'command', 'builtin', 'exec', 'nohup', 'time', 'nice', 'timeout', 'stdbuf', 'if', 'elif', 'then', 'else', 'while', 'until', 'do', '!'])
 
 /** The command a segment runs once grouping, wrappers, assignments and the program's directory are off. */
+// Wrapper flags whose value is the next word: `sudo -u root rm …` runs `rm …`.
+const WRAPPER_ARGS: Record<string, string[]> = {
+  sudo: ['-u', '-g', '-U', '-C', '-h', '-p', '-r', '-t', '-D', '-T'],
+  env: ['-u', '-C', '-S'],
+  nice: ['-n'],
+  timeout: ['-s', '-k'],
+  stdbuf: ['-i', '-o', '-e']
+}
+
 function unwrapped(segment: string): string {
   const all = words(segment.replace(/^[\s({]+|[\s)}]+$/g, ''))
   let index = 0
   while (index < all.length) {
     if (WRAPPERS.has(all[index])) {
+      const takesValue = WRAPPER_ARGS[all[index]] ?? []
       index += 1
-      while (index < all.length && /^(?:-|\d+[smhd]?$)/.test(all[index])) index += 1
+      while (index < all.length && /^(?:-|\d+[smhd]?$)/.test(all[index])) {
+        index += takesValue.includes(all[index]) ? 2 : 1
+      }
     } else if (/^[A-Za-z_]\w*=/.test(all[index])) {
       index += 1
     } else break
@@ -355,7 +396,8 @@ export function hasOpaqueShellSyntax(command: string): boolean {
     syntax.includes('`') || // the older spelling of the same thing
     syntax.includes('>') || // truncates or appends to a file
     syntax.includes('<(') || // process substitution
-    syntax.includes('<<') // heredoc: the payload is not on this line
+    syntax.includes('<<') || // heredoc: the payload is not on this line
+    scan(command).open // a quote left open: the shell would read on past it
   )
 }
 

@@ -25,6 +25,13 @@ const NEVER = new Set([
   'terraform', 'kubectl', 'helm', 'gcloud', 'aws', 'az', 'gh',
   'bash', 'sh', 'zsh', 'eval', 'exec', 'xargs', 'env', 'nohup', 'osascript'
 ])
+// Interpreters and runners: offered only for one script or tool (`node test.js *`, `npx tsc *`),
+// never bare or with a flag first: `node *` is `node -e` too, permission to run any code at all.
+const INTERPRETERS = new Set(['node', 'python', 'python3', 'perl', 'ruby', 'php', 'deno', 'bun', 'lua', 'awk', 'gawk', 'npx', 'pnpx', 'bunx', 'docker', 'podman'])
+// Subcommands that run whatever comes after them: `npm exec`, `pnpm dlx`, `docker run`.
+const RUNS_ANYTHING = new Set(['exec', 'dlx', 'x', 'node', 'run', 'compose', 'build'])
+// Package managers whose `run` only runs the project's own scripts.
+const SCRIPT_RUNNERS = new Set(['npm', 'pnpm', 'yarn', 'bun'])
 const GIT_NEVER = new Set(['push', 'reset', 'rebase', 'clean', 'branch', 'tag', 'remote', 'checkout', 'switch', 'restore', 'rm', 'mv', 'filter-branch', 'gc', 'prune'])
 
 /** The allowlist pattern a person would write for this command, or null when none should be offered. */
@@ -32,11 +39,18 @@ export function approvalPattern(command: string): string | null {
   if (hasOpaqueShellSyntax(command)) return null
   const segments = splitCommand(command).filter((segment) => !/^cd(?:\s|$)/.test(segment))
   if (segments.length !== 1) return null
-  const [program, second] = segments[0].split(/\s+/)
-  if (!program || NEVER.has(program)) return null
-  if (program === 'git' && (!second || GIT_NEVER.has(second))) return null
+  const [first, second] = segments[0].split(/\s+/)
+  // `FOO=1 rm …` runs rm, and `/bin/rm` is rm: neither may slip past NEVER under another name.
+  if (!first || /^[A-Za-z_]\w*=/.test(first) || /['"`$\\]/.test(first)) return null
+  const program = first.replace(/^.*\//, '')
+  if (NEVER.has(program)) return null
+  // git's first word is what it does; `git -c … log` would otherwise offer `git *`, push included.
+  if (program === 'git' && (!second || second.startsWith('-') || GIT_NEVER.has(second))) return null
   const keepsSecond = second !== undefined && !second.startsWith('-') && !/['"`$]/.test(second)
-  return keepsSecond ? `${program} ${second}*` : `${program}*`
+  if (INTERPRETERS.has(program) && !keepsSecond) return null
+  if (keepsSecond && RUNS_ANYTHING.has(second) && !(second === 'run' && SCRIPT_RUNNERS.has(program))) return null
+  // A space before `*`: `make *` covers `make` and `make test`, not `makefoo`.
+  return keepsSecond ? `${first} ${second} *` : `${first} *`
 }
 
 interface Learned {

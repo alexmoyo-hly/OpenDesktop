@@ -822,7 +822,7 @@ export function createTools(ctx: ToolContext): ToolSet {
         }
         const after = replace_all
           ? before.split(old_string).join(new_string)
-          : before.replace(old_string, new_string)
+          : before.replace(old_string, () => new_string)
         const preview = renderDiff(before, after)
         const stats = diffStats(before, after)
         return withBlock(
@@ -849,7 +849,7 @@ export function createTools(ctx: ToolContext): ToolSet {
               }
               const applied = replace_all
                 ? current.split(old_string).join(new_string)
-                : current.replace(old_string, new_string)
+                : current.replace(old_string, () => new_string) // a function: `$$` or `$&` in the text stay as written
               const warning = writeWarning(ctx.sessionId, resolved)
               await ctx.runtime.writeFile(resolved, applied)
               recordWrite(ctx.sessionId, resolved)

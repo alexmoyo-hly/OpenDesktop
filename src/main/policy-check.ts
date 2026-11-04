@@ -55,6 +55,11 @@ async function main(): Promise<void> {
     console.log('usage: OD_LIVE_KEY_FILE=<path> [OD_LIVE_BASE_URL=…] policy-check.mjs <model>')
     process.exit(2)
   }
+  // It saves a config of its own: run against the real one, it would replace the person's.
+  if (!process.env.OPENDESKTOP_HOME) {
+    console.log('refusing to run without OPENDESKTOP_HOME: it would overwrite the real config (use pnpm policy:check)')
+    process.exit(2)
+  }
   seedBuiltins()
   setAgentLoader(listAgents)
   const base = defaultConfig()

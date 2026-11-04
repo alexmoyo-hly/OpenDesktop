@@ -151,8 +151,20 @@ export async function allowAndRetry(sessionId: string, blockId: string): Promise
   const call =
     typeof block.input.command === "string" ? block.input.command : block.title;
   const text = `I allow the call the auto-approve rules refused; make it again exactly as before: ${call}`;
-  if (isRunning(sessionId)) queueFollowUp(sessionId, text);
-  else await runTurn({ sessionId, userText: text });
+  if (isRunning(sessionId)) {
+    queueFollowUp(sessionId, text);
+    return;
+  }
+  /*
+   * A subagent that has finished cannot be woken as a turn of its own: run at
+   * the top level, its answer would reach nobody. The conversation the person
+   * opened makes the call instead, allowed once there too.
+   */
+  const session = store.getSession(sessionId);
+  const root = session ? store.rootOf(session).id : sessionId;
+  if (root !== sessionId) allowOnce(root, action);
+  if (isRunning(root)) queueFollowUp(root, text);
+  else await runTurn({ sessionId: root, userText: text });
 }
 
 /**
