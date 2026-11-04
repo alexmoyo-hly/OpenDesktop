@@ -468,6 +468,8 @@ export interface Block {
   /** Set when the block is a subagent's work, pointing at the parent task block. */
   parentBlockId?: string;
   approvalId?: string;
+  /** Refused by the auto-approve rules: the exact action, so a person can allow it once. */
+  policyBlocked?: { action: string };
 }
 
 export type MessagePartType = "text" | "reasoning" | "block" | "error";
@@ -665,6 +667,8 @@ export interface ApprovalRequest {
   command?: string;
   /** Paths the command writes outside the working directory, said on the card. */
   outside?: string[];
+  /** Why a person is asked although the session runs without asking. */
+  note?: string;
   environmentId: string;
   cwd: string;
   createdAt: number;

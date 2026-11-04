@@ -347,6 +347,8 @@ const api = {
       note?: string,
     ): Promise<void> =>
       ipcRenderer.invoke("approval:resolve", id, answer, note),
+    allowBlocked: (sessionId: string, blockId: string): Promise<void> =>
+      ipcRenderer.invoke("approval:allowBlocked", sessionId, blockId),
   },
   activity: {
     all: (limit?: number): Promise<Block[]> =>

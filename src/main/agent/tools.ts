@@ -12,7 +12,7 @@ import {
   requestApproval,
   withoutPrompts
 } from '../approvals'
-import { hasPolicy, judgeCall } from '../auto-policy'
+import { hasPolicy, judgeCall, policyPaused } from '../auto-policy'
 import { diffStats, renderDiff } from '../diff'
 import { shellQuote, type Runtime } from '../runtime'
 import {
@@ -171,14 +171,23 @@ async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpe
 
   let needsAsk = needsPerson(ctx, block.tool, spec, decision, auto)
   const asksWithoutAuto = () => needsPerson(ctx, block.tool, spec, decide(ctx.permissions, spec.key, spec.command), false)
+  let cardNote: string | undefined
   if (auto && hasPolicy(ctx.config) && asksWithoutAuto()) {
-    const verdict = await judgeCall(ctx.config, ctx.sessionId, actionOf(block, spec), ctx.cwd)
+    const action = actionOf(block, spec)
+    const paused = policyPaused(ctx.sessionId)
+    const verdict = paused ? null : await judgeCall(ctx.config, ctx.sessionId, action, ctx.cwd)
     if (verdict && !verdict.allowed) {
       const why = `auto-approve policy — ${verdict.rule || 'a deny rule'}: ${verdict.reason || 'no reason given'}`
-      store.updateBlock(ctx.sessionId, block.id, { status: 'error', error: `Blocked by the ${why}`, endedAt: Date.now() })
+      store.updateBlock(ctx.sessionId, block.id, {
+        status: 'error',
+        error: `Blocked by the ${why}`,
+        endedAt: Date.now(),
+        policyBlocked: { action }
+      })
       throw new PermissionDenied(spec.detail, why)
     }
     needsAsk = verdict === null
+    cardNote = paused ?? (verdict === null ? 'The auto-approve judge could not answer; this one is yours to decide.' : undefined)
   }
   if (!needsAsk) return
 
@@ -195,6 +204,7 @@ async function askPermission(ctx: ToolContext, block: Block, spec: PermissionSpe
     preview: spec.preview,
     command: spec.command,
     ...(spec.writesOutside?.length ? { outside: spec.writesOutside } : {}),
+    ...(cardNote ? { note: cardNote } : {}),
     environmentId: ctx.environmentId,
     cwd: ctx.cwd
   })

@@ -5,11 +5,12 @@ import { NOTHING } from '@shared/savings'
 import type { AppConfig } from '@shared/types'
 import { createTools, type ToolContext } from '../src/main/agent/tools'
 import { listPending, resolveApproval, PermissionDenied } from '../src/main/approvals'
-import { setPolicyJudge, type PolicyQuestion } from '../src/main/auto-policy'
-import { loadConfig, normalizeConfig } from '../src/main/config'
+import { allowOnce, resetPolicyBreaker, setPolicyJudge, type PolicyQuestion } from '../src/main/auto-policy'
+import { loadConfig, normalizeConfig, saveConfig } from '../src/main/config'
+import { allowAndRetry, runTurn } from '../src/main/agent/runner'
 import { getRuntime } from '../src/main/runtime'
 import * as store from '../src/main/store'
-import { boot, newSession } from './helpers'
+import { boot, newSession, scriptedModel, useModel, type Captured } from './helpers'
 
 beforeAll(boot)
 afterEach(() => setPolicyJudge(null))
@@ -166,5 +167,97 @@ describe('the policy in the config', () => {
 
   test('is absent unless written', () => {
     expect(normalizeConfig({}).autoMode).toBeUndefined()
+  })
+})
+
+describe('safeguards around the judge', () => {
+  // Claude Code's auto mode does the same: a judge that keeps refusing hands the turn back to a person.
+  test('after three refusals in a row the next call goes to a person, with the reason on the card', async () => {
+    judging(() => ({ allowed: false, rule: 'Git Push', reason: 'not asked for' }))
+    const ctx = context(true)
+    for (const n of [1, 2, 3]) expect((await run(ctx, `touch refused-${n}.txt`)).asked).toBe(false)
+    const tools = createTools(ctx)
+    const running = (tools.bash.execute as (i: unknown, o: unknown) => Promise<unknown>)(
+      { command: 'touch fourth.txt', description: 'test' },
+      { toolCallId: 'b', messages: [] }
+    ).catch(() => undefined)
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    const [card] = listPending().filter((request) => request.sessionId === ctx.sessionId)
+    expect(card?.note).toMatch(/3 refusals in a row/)
+    resolveApproval(card.id, 'once')
+    await running
+    expect(existsSync(join(ctx.cwd, 'fourth.txt'))).toBe(true)
+  })
+
+  test('an allowed call in between resets the run, but twenty refusals in a turn still trip it', async () => {
+    let n = 0
+    judging(() => (++n % 2 === 0 ? { allowed: true } : { allowed: false, rule: 'X', reason: 'x' }))
+    const ctx = context(true)
+    for (let i = 0; i < 39; i++) expect((await run(ctx, `touch mixed-${i}.txt`)).asked).toBe(false)
+    expect((await run(ctx, 'touch mixed-last.txt')).asked).toBe(true)
+  }, 60_000)
+
+  test('a new turn starts with the judge trusted again', async () => {
+    judging(() => ({ allowed: false, rule: 'X', reason: 'x' }))
+    const ctx = context(true)
+    for (const n of [1, 2, 3]) await run(ctx, `touch again-${n}.txt`)
+    resetPolicyBreaker(ctx.sessionId)
+    expect((await run(ctx, 'touch after-reset.txt')).asked).toBe(false)
+  })
+
+  test('a refused call the person allows runs once, without asking the judge again', async () => {
+    const asked = judging(() => ({ allowed: false, rule: 'Git Push', reason: 'not asked for' }))
+    const ctx = context(true)
+    await run(ctx, 'touch allowed-later.txt')
+    const [block] = store.listBlocks(ctx.sessionId)
+    expect(block?.policyBlocked?.action).toContain('touch allowed-later.txt')
+    allowOnce(ctx.sessionId, block!.policyBlocked!.action)
+    const judgedBefore = asked.length
+    expect((await run(ctx, 'touch allowed-later.txt')).error).toBeUndefined()
+    expect(existsSync(join(ctx.cwd, 'allowed-later.txt'))).toBe(true)
+    expect(asked.length).toBe(judgedBefore)
+    expect((await run(ctx, 'touch allowed-later.txt')).error).toBeInstanceOf(PermissionDenied)
+  })
+})
+
+describe('a turn', () => {
+  test('starts with the judge trusted again, whatever the last one ended on', async () => {
+    const original = loadConfig()
+    saveConfig({ ...original, autoMode: RULES })
+    try {
+      const asked = judging(() => ({ allowed: false, rule: 'X', reason: 'x' }))
+      const session = newSession({ autoApprove: true })
+      const ctx = { ...context(true), sessionId: session.id, cwd: session.cwd }
+      for (const n of [1, 2, 3]) await run(ctx, `touch tripped-${n}.txt`)
+      const judgedBefore = asked.length
+      useModel(scriptedModel([{ calls: [{ tool: 'bash', input: { command: 'touch next-turn.txt', description: 'x' } }] }, { text: 'done' }]))
+      await runTurn({ sessionId: session.id, userText: 'go on' })
+      expect(asked.length).toBe(judgedBefore + 1)
+    } finally {
+      saveConfig(original)
+    }
+  })
+})
+
+describe('allow and retry', () => {
+  test('lets the refused call through once and tells the agent to run it again', async () => {
+    const original = loadConfig()
+    saveConfig({ ...original, autoMode: RULES })
+    try {
+      const asked = judging(() => ({ allowed: false, rule: 'Git Push', reason: 'not asked for' }))
+      const session = newSession({ autoApprove: true })
+      const ctx = { ...context(true), sessionId: session.id, cwd: session.cwd }
+      await run(ctx, 'touch retried.txt')
+      const blocked = store.listBlocks(session.id).find((b) => b.policyBlocked)!
+      const judgedBefore = asked.length
+      const seen: Captured[] = []
+      useModel(scriptedModel([{ calls: [{ tool: 'bash', input: { command: 'touch retried.txt', description: 'again' } }] }, { text: 'done' }], seen))
+      await allowAndRetry(session.id, blocked.id)
+      expect(existsSync(join(session.cwd, 'retried.txt'))).toBe(true)
+      expect(asked.length).toBe(judgedBefore)
+      expect(JSON.stringify(seen[0])).toContain('touch retried.txt')
+    } finally {
+      saveConfig(original)
+    }
   })
 })

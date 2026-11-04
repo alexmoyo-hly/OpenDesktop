@@ -107,6 +107,52 @@ async function askModel(config: AppConfig, question: PolicyQuestion): Promise<Po
   return VERDICT.parse(JSON.parse(match[0]))
 }
 
+/*
+ * Safeguards, as in Claude Code's auto mode: a judge that keeps refusing is
+ * likely wrong about the task, so after three refusals in a row, or twenty in a
+ * turn, the person decides instead until the next turn. And a refusal the
+ * person overrules is allowed once, exactly as it was asked.
+ */
+const IN_A_ROW = 3
+const IN_A_TURN = 20
+const refusals = new Map<string, { inARow: number; total: number }>()
+const allowedOnce = new Map<string, Set<string>>()
+
+/** Called as a turn starts: the judge is trusted again. */
+export function resetPolicyBreaker(sessionId: string): void {
+  refusals.delete(sessionId)
+}
+
+/** Why the judge has stopped deciding for this session this turn, or null. */
+export function policyPaused(sessionId: string): string | null {
+  const count = refusals.get(sessionId)
+  if (!count) return null
+  if (count.inARow >= IN_A_ROW) {
+    return `Auto-approve stopped judging after ${count.inARow} refusals in a row; this one is yours to decide.`
+  }
+  if (count.total >= IN_A_TURN) {
+    return `Auto-approve stopped judging after ${count.total} refusals this turn; this one is yours to decide.`
+  }
+  return null
+}
+
+/** The person overruled a refusal: the same action goes through once. */
+export function allowOnce(sessionId: string, action: string): void {
+  const set = allowedOnce.get(sessionId) ?? new Set<string>()
+  set.add(action)
+  allowedOnce.set(sessionId, set)
+}
+
+function record(sessionId: string, verdict: PolicyVerdict): void {
+  const count = refusals.get(sessionId) ?? { inARow: 0, total: 0 }
+  if (verdict.allowed) count.inARow = 0
+  else {
+    count.inARow += 1
+    count.total += 1
+  }
+  refusals.set(sessionId, count)
+}
+
 /** The verdict on one call, or null when the judge could not give one (the person decides then). */
 export async function judgeCall(
   config: AppConfig,
@@ -115,15 +161,20 @@ export async function judgeCall(
   cwd: string
 ): Promise<PolicyVerdict | null> {
   if (!config.autoMode) return { allowed: true }
+  if (allowedOnce.get(sessionId)?.delete(action)) return { allowed: true }
   const question: PolicyQuestion = { rules: config.autoMode, action, cwd, asked: personAsked(sessionId) }
   const key = JSON.stringify(question)
   const known = verdicts.get(key)
-  if (known) return known
+  if (known) {
+    record(sessionId, known)
+    return known
+  }
   try {
     const verdict = judgeOverride ? await judgeOverride(question) : await askModel(config, question)
     if (verdict) {
       if (verdicts.size >= VERDICT_CAP) verdicts.clear()
       verdicts.set(key, verdict)
+      record(sessionId, verdict)
     }
     return verdict
   } catch (error) {

@@ -56,6 +56,7 @@ import {
   queueFollowUp,
   runTurn,
   stop,
+  allowAndRetry,
 } from "./agent/runner";
 import { forkFrom, rewind } from "./rewind";
 import {
@@ -899,6 +900,13 @@ export function registerIpc(): void {
 
   /* ---------- approvals ---------- */
   ipcMain.handle("approval:list", () => listPending());
+  ipcMain.handle(
+    "approval:allowBlocked",
+    (_e, sessionId: string, blockId: string) => {
+      // Not awaited: when no turn is running this starts one, which takes as long as it takes.
+      void allowAndRetry(sessionId, blockId).catch(() => undefined);
+    },
+  );
   ipcMain.handle(
     "approval:resolve",
     (_e, id: string, answer: ApprovalAnswer, note?: unknown) =>

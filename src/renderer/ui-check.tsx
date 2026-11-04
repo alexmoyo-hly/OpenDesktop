@@ -599,6 +599,55 @@ async function run(): Promise<void> {
     check("a token count that rounds to a million is shown in millions", tokens(999_940) === "999.9k" && tokens(999_950) === "1.00M", [tokens(999_940), tokens(999_950)]);
   }
 
+  section("the auto-approve judge, seen from the transcript");
+  {
+    // When the judge stops deciding, the card says why a session that runs without asking is asking.
+    const card = mount(
+      <ApprovalCard
+        request={{
+          id: "a-note",
+          sessionId: "s1",
+          blockId: "b",
+          tool: "bash",
+          title: "touch x",
+          detail: "touch x",
+          command: "touch x",
+          note: "Auto-approve stopped judging after 3 refusals in a row; this one is yours to decide.",
+          environmentId: "local",
+          cwd: "/tmp/project",
+          createdAt: 0,
+        } as ApprovalRequest}
+        active={false}
+      />,
+    );
+    await settle();
+    check(
+      "a card the judge handed back says why",
+      (card.textContent ?? "").includes("3 refusals in a row"),
+      card.textContent?.slice(0, 200),
+    );
+
+    // A refused call can be overruled from where it is shown.
+    const refused = mount(
+      <BlockCard
+        block={block({
+          id: "refused",
+          status: "error",
+          error: "Blocked by the auto-approve policy — Git Push: not asked for",
+          policyBlocked: { action: "bash: git push origin main" },
+        })}
+      />,
+    );
+    await settle();
+    refused.querySelector("button")?.click();
+    await settle();
+    check(
+      "a call the rules refused offers to allow it once and retry",
+      [...refused.querySelectorAll("button")].some((b) => /Allow and retry/.test(b.textContent ?? "")),
+      [...refused.querySelectorAll("button")].map((b) => b.textContent),
+    );
+  }
+
   section("a run of tool calls, collapsed");
   {
     const group = mount(

@@ -132,6 +132,8 @@ export function requestApproval(input: {
   /** For a shell call: what "always" is granted against. */
   command?: string
   outside?: string[]
+  /** Why a person is asked although the session runs without asking. */
+  note?: string
   environmentId: string
   cwd: string
 }): Promise<ApprovalDecision> {

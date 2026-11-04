@@ -35,6 +35,7 @@ import { isAbort } from "@shared/errors";
 import { budgetFor } from "@shared/context";
 import { effectivePermissions, resolvedConfig } from "../config";
 import { bus } from "../bus";
+import { allowOnce, resetPolicyBreaker } from "../auto-policy";
 import {
   PermissionDenied,
   autoApproving,
@@ -86,6 +87,23 @@ export function queueFollowUp(sessionId: string, text: string): void {
   store.updateSession(sessionId, {
     queuedFollowUps: [...(session.queuedFollowUps ?? []), text.trim()],
   });
+}
+
+/**
+ * The person overrules a refusal of the auto-approve rules: that exact call is
+ * allowed once, and the agent is told to make it again — at its next step when
+ * a turn is running, as a turn of its own otherwise.
+ */
+export async function allowAndRetry(sessionId: string, blockId: string): Promise<void> {
+  const block = store.getBlock(sessionId, blockId);
+  const action = block?.policyBlocked?.action;
+  if (!block || !action) return;
+  allowOnce(sessionId, action);
+  const call =
+    typeof block.input.command === "string" ? block.input.command : block.title;
+  const text = `I allow the call the auto-approve rules refused; make it again exactly as before: ${call}`;
+  if (isRunning(sessionId)) queueFollowUp(sessionId, text);
+  else await runTurn({ sessionId, userText: text });
 }
 
 /**
@@ -1364,6 +1382,8 @@ export async function runTurn(input: TurnInput): Promise<string> {
     // is built around, so the container kind overrides the switch.
     const autoApprove =
       runtime.kind === "container" ? false : autoApproving(config, session.id);
+    // A judge that kept refusing last turn is trusted again: the person has spoken since.
+    resetPolicyBreaker(session.id);
     const savings = await announceSavingsProblems({
       config,
       sessionId: session.id,
